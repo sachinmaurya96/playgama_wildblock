@@ -27,6 +27,28 @@ export async function copyInvite(code: string): Promise<void> {
   }
 }
 
+/** Build Home with friends: room code, who's here, and the voice buttons (the Build Home HUD does the rest). */
+export function CoopBar() {
+  const active = usePvpStore((s) => s.active);
+  const code = usePvpStore((s) => s.code);
+  const online = usePvpStore((s) => s.online);
+  const players = usePvpStore((s) => s.players);
+  const open = usePvpStore((s) => s.scoreboardOpen);
+  if (!active) return null;
+  return (
+    <>
+      <div className="coop-bar">
+        <button className="pvp-chip code" onClick={() => void copyInvite(code)} title="Copy invite link">
+          {online ? '🌐' : '💻'} <b>{code}</b> <small>· {players.length}/8</small>
+        </button>
+        <button className="pvp-chip" onClick={() => usePvpStore.getState().set({ scoreboardOpen: !open })} title="Who's building">🤝 {players.length} 👥</button>
+      </div>
+      <VoiceHud />
+      {open && <Scoreboard />}
+    </>
+  );
+}
+
 /** PvP HUD: room code & timer, your score, kill feed, respawn countdown, scoreboard and match results. */
 export function PvpHud() {
   const code = usePvpStore((s) => s.code);
@@ -80,7 +102,6 @@ export function PvpHud() {
       <VoiceHud />
       <KillFeed />
       <RespawnBanner />
-      <EmergencyButton />
       {open && <Scoreboard />}
     </>
   );
@@ -313,23 +334,6 @@ function Radar() {
   );
 }
 
-function EmergencyButton() {
-  const show = usePvpStore((s) => s.emergency);
-  const touch = !!Game.current?.input.touch.active;
-  if (!show) return null;
-  return (
-    <button
-      className="emergency-btn"
-      onPointerDown={(e) => {
-        e.stopPropagation();
-        Game.current?.pvp?.emergencyRespawn();
-      }}
-    >
-      🆘 Stuck? Respawn near players {!touch && <span className="kbd">R</span>}
-    </button>
-  );
-}
-
 /** ⚙️ quick options for a PvP game: camera view, controls, scoreboard, invite, settings and exit. */
 function GearPanel() {
   const close = () => usePvpStore.getState().set({ gearOpen: false });
@@ -386,7 +390,7 @@ function GearPanel() {
               <div><b>WASD</b> move · <b>Shift</b> sprint · <b>Space</b> jump · <b>Ctrl</b> crouch</div>
               <div><b>Left click</b> attack / break · <b>Right click</b> place / shoot bow</div>
               <div><b>1–9</b> hotbar · <b>{keyLabel(keys.inventory)}</b> backpack · <b>{keyLabel(keys.camera)}</b> camera · <b>Tab</b> players</div>
-              <div><b>{keyLabel(keys.options)}</b> this options panel · <b>Esc</b> pause · <b>R</b> emergency respawn (when stuck)</div>
+              <div><b>{keyLabel(keys.options)}</b> this options panel · <b>Esc</b> pause</div>
               <div><b>{keyLabel(keys.talk)}</b> talk · <b>{keyLabel(keys.listen)}</b> listen on / off (voice chat)</div>
             </>
           )}

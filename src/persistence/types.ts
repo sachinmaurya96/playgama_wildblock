@@ -70,6 +70,11 @@ export interface WorldMeta {
   caves?: number;
   /** PvP: flat arena type (a Build Home lot with scenery); missing = the main wild world. */
   arena?: PlotType;
+  /**
+   * Build Home opened to friends: everyone builds on it together with the full Build Home tools.
+   * 'host' = your own project (keeps saving), 'guest' = a friend's lot (never saved). Not stored.
+   */
+  coop?: 'host' | 'guest';
 }
 
 export interface PlayerSave {

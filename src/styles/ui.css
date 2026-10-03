@@ -678,20 +678,16 @@ button.pvp-chip { cursor: pointer; }
 .map-card { text-align: left; }
 .map-card small { line-height: 1.25; }
 
-/* PvP radar (top-left) + emergency respawn */
+/* PvP radar (top-left) */
 .pvp-radar { position: absolute; left: max(14px, var(--safe-l)); top: max(12px, var(--safe-t)); display: flex; flex-direction: column; align-items: center; gap: 3px; z-index: 3; }
 .pvp-radar canvas { width: 132px; height: 132px; display: block; }
 .pvp-radar small { background: rgba(30, 22, 14, 0.62); color: #fff6e0; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 800; white-space: nowrap; max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
 .hud.pvp-hud .vitals { left: calc(max(14px, var(--safe-l)) + 146px); }
-.emergency-btn { position: absolute; left: 50%; bottom: calc(max(14px, var(--safe-b)) + 92px); transform: translateX(-50%); z-index: 6; pointer-events: auto !important; border: 3px solid #7a2a22; background: linear-gradient(180deg, #ff8a6a, #d9443a); color: #fff; font-weight: 900; font-size: 16px; font-family: inherit; padding: 10px 18px; border-radius: 999px; box-shadow: 0 4px 0 #7a2a22, 0 8px 18px rgba(60, 10, 5, 0.4); cursor: pointer; animation: sosPulse 1.4s ease-in-out infinite; display: flex; gap: 8px; align-items: center; white-space: nowrap; }
-@keyframes sosPulse { 0%, 100% { transform: translateX(-50%) scale(1); } 50% { transform: translateX(-50%) scale(1.06); } }
-.emergency-btn .kbd { border-color: #fff; }
 .touch-ui .pvp-radar { left: max(8px, var(--safe-l)); top: max(6px, var(--safe-t)); }
 .touch-ui .pvp-radar canvas { width: 92px; height: 92px; }
 .touch-ui .pvp-radar small { font-size: 9px; max-width: 120px; }
 .touch-ui .hud.pvp-hud .vitals { left: calc(max(8px, var(--safe-l)) + 102px); }
-.touch-ui .emergency-btn { bottom: auto; top: 30%; font-size: 14px; padding: 8px 14px; }
-@media (max-height: 420px) { .pvp-radar canvas { width: 96px; height: 96px; } .hud.pvp-hud .vitals { left: calc(max(14px, var(--safe-l)) + 108px); } }
+.touch-ui @media (max-height: 420px) { .pvp-radar canvas { width: 96px; height: 96px; } .hud.pvp-hud .vitals { left: calc(max(14px, var(--safe-l)) + 108px); } }
 /* phones/tablets in PvP: the radar replaces the compass; match chips sit under the right-hand buttons */
 .touch-ui .hud.pvp-hud .compass-wrap { display: none; }
 .touch-ui .pvp-top { left: auto; right: max(10px, calc(var(--safe-r) + 6px)); transform: none; top: max(58px, calc(var(--safe-t) + 52px)); }
@@ -831,3 +827,9 @@ button.pvp-chip { cursor: pointer; }
 .pf-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .pf-row .search { flex: 1 1 140px; min-width: 0; font-size: 16px; }
 .play-friends .pvp-error { font-size: 0.85em; }
+/* Build Home with friends */
+.coop-bar { position: absolute; left: 50%; bottom: max(96px, calc(var(--safe-b) + 90px)); transform: translateX(-50%); display: flex; gap: 6px; z-index: 4; }
+.hud > .coop-bar, .hud > .coop-bar * { pointer-events: auto; }
+/* Build Home with friends: 🎧 / 🎤 sit above the room chips, clear of the tool bar and side panels */
+.hud > .coop-bar ~ .voice-dock { top: auto; left: 50%; right: auto; transform: translateX(-50%); bottom: max(136px, calc(var(--safe-b) + 130px)); flex-direction: column-reverse; align-items: center; }
+.touch-ui .hud > .coop-bar ~ .voice-dock { bottom: max(150px, calc(var(--safe-b) + 144px)); }

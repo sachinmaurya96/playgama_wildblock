@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { launchPvp } from '../../app/launch';
+import { launchCoopHost, launchPvp } from '../../app/launch';
 import { Game } from '../../game/Game';
 import { PLOT_Y } from '../../game/world/PlotGenerator';
 import { hostRoom } from '../../net/pvpNet';
@@ -22,12 +22,13 @@ function load<T>(key: string, fallback: T): T {
  */
 export function PlayWithFriends() {
   const mode = useGameStore((s) => s.world?.mode);
-  const [style, setStyle] = useState<PvpStyle>(mode === 'build' ? 'together' : 'battle');
+  const [style, setStyle] = useState<PvpStyle>('battle');
   const [online, setOnline] = useState(true);
   const [name, setName] = useState<string>(() => load('wb-pvp-name', ''));
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  if (mode !== 'survival' && mode !== 'build') return null;
+  // already sharing (or a friend's lot): nothing to open
+  if ((mode !== 'survival' && mode !== 'build') || Game.current?.pvp) return null;
 
   const start = async () => {
     const g = Game.current;
@@ -45,7 +46,9 @@ export function PlayWithFriends() {
       spawn: g.build ? { x: p.x, y: PLOT_Y + 1, z: p.z } : { x: p.x, y: p.y, z: p.z },
     };
     const saved = load<Partial<PvpSettings>>('wb-pvp-settings', {});
-    const settings: PvpSettings = { ...DEFAULT_PVP_SETTINGS, ...saved, style, map: arena ?? 'wild', seedText: `world-${g.meta.id}`, source };
+    // Build Home: always building together, with everyone's full Build Home tools
+    const settings: PvpSettings = { ...DEFAULT_PVP_SETTINGS, ...saved, style: g.build ? 'together' : style, map: arena ?? 'wild', seedText: `world-${g.meta.id}`, source };
+    const worldId = g.meta.id;
     const playerName = (name.trim() || 'Explorer').slice(0, 16);
     try {
       localStorage.setItem('wb-pvp-name', JSON.stringify(name));
@@ -55,9 +58,12 @@ export function PlayWithFriends() {
     setBusy(online ? 'Opening your room…' : 'Opening a local room…');
     try {
       const session = await hostRoom({ name: playerName, color: load('wb-pvp-color', PVP_COLORS[0]), online, settings });
-      session.sourceObjects = objects;
       useGameStore.setState({ overlay: null });
-      launchPvp(session, mods);
+      if (source.kind === 'build') await launchCoopHost(worldId);
+      else {
+        session.sourceObjects = objects;
+        launchPvp(session, mods);
+      }
     } catch (e) {
       setError((e as Error).message);
       setBusy(null);
@@ -67,13 +73,19 @@ export function PlayWithFriends() {
   return (
     <div className="play-friends">
       <div className="pf-head">
-        <b>🎮 PvP mode — play this {mode === 'build' ? 'home' : 'world'} with friends</b>
-        <small className="muted">Opens a room on this map{mode === 'build' ? ' with your house and furniture' : ' with everything you built'}. Friends join with the room code. Your save stays exactly as it is.</small>
+        <b>🎮 {mode === 'build' ? 'Build this home together with friends' : 'PvP mode — play this world with friends'}</b>
+        <small className="muted">
+          {mode === 'build'
+            ? 'Friends join your lot in Build Home mode with the full catalog and tools. Everything anyone builds shows up for everyone and is saved in your project.'
+            : 'Opens a room on this map with everything you built. Friends join with the room code. Your save stays exactly as it is.'}
+        </small>
       </div>
-      <div className="seg pf-style">
-        <button className={`seg-btn ${style === 'battle' ? 'active' : ''}`} onClick={() => setStyle('battle')}>⚔️ Battle</button>
-        <button className={`seg-btn ${style === 'together' ? 'active' : ''}`} onClick={() => setStyle('together')}>🤝 Build together</button>
-      </div>
+      {mode !== 'build' && (
+        <div className="seg pf-style">
+          <button className={`seg-btn ${style === 'battle' ? 'active' : ''}`} onClick={() => setStyle('battle')}>⚔️ Battle</button>
+          <button className={`seg-btn ${style === 'together' ? 'active' : ''}`} onClick={() => setStyle('together')}>🤝 Build together</button>
+        </div>
+      )}
       <div className="pf-row">
         <input className="search" maxLength={16} placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} aria-label="Your name" />
         <div className="seg">

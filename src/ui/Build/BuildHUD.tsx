@@ -92,7 +92,8 @@ function TopBar() {
     const t = setInterval(() => tick((x) => x + 1), 10000);
     return () => clearInterval(t);
   }, []);
-  const saved = lastSaved ? `Saved ${ago(lastSaved)}` : 'Not saved yet';
+  const guest = Game.current?.meta.coop === 'guest';
+  const saved = guest ? "🤝 Friend's lot · saved by the host" : lastSaved ? `Saved ${ago(lastSaved)}` : 'Not saved yet';
   return (
     <div className="bh-top">
       <div className="bh-project">

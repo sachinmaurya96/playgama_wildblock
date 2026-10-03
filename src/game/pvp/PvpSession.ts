@@ -8,7 +8,7 @@ import { useInventoryStore } from '../../stores/inventoryStore';
 import { usePvpStore, type PvpPlayerInfo, type PvpSettings } from '../../stores/pvpStore';
 import { animateExplorer, buildExplorer, dressExplorer, dressFromItems, type Rig } from '../rendering/Models';
 import { makeStack, type ItemStack } from '../systems/InventoryLogic';
-import { BuildObjects } from '../build/BuildObjects';
+import { BuildObjects, type ObjectOp } from '../build/BuildObjects';
 import { objectMaterials } from '../build/ObjectGeometry';
 import type { BuildObjectSave } from '../../persistence/types';
 import { CHUNK_SIZE } from '../world/constants';
@@ -213,10 +213,6 @@ export class PvpSession {
   private swingCount = 0;
   private lastSwingSent = 0;
   respawnIn = 0;
-  /** Seconds the local player has been stuck (deep in water, fallen into a cave / ravine). */
-  private stuckTime = 0;
-  private rescueCooldown = 0;
-  private emergency = false;
   /** Quick respawn / teleport cooldown (seconds). */
   private moveCooldown = 0;
   /** After a teleport: once the terrain there has loaded, make sure we aren't inside a wall. */
@@ -236,6 +232,8 @@ export class PvpSession {
   private objectList: Omit<BuildObjectSave, 'id'>[] = [];
   private relightTimer = 0;
   private relightsLeft = 0;
+  /** Build Home with friends: this player's object changes waiting to be sent (latest move per object wins). */
+  private outOps: ObjectOp[] = [];
 
   constructor(private game: Game) {
     const net = pvpNet.current;
@@ -259,7 +257,16 @@ export class PvpSession {
       if (this.settings.building) this.outEdits.push([x, y, z, id | (meta << 8)]);
     };
     game.drops.onNetPickup = (lid) => this.requestLoot(lid);
-    if (net.isHost && this.settings.source) {
+    const build = game.build;
+    if (build) {
+      // Build Home with friends: share every object change; friends number new objects in their own range
+      if (!net.isHost) {
+        let h = 0;
+        for (const ch of net.selfId) h = (h * 31 + ch.charCodeAt(0)) % 900;
+        build.objects.nextId = Math.max(build.objects.nextId, (h + 1) * 1_000_000);
+      }
+      build.objects.onOp = (op) => this.queueOp(op);
+    } else if (net.isHost && this.settings.source) {
       // the world's own changes, captured before the match edits anything
       for (const [k, m] of game.world.mods) {
         const cx = ckeyX(k) * CHUNK_SIZE, cz = ckeyZ(k) * CHUNK_SIZE;
@@ -366,7 +373,9 @@ export class PvpSession {
     const v = this.voice;
     const inp = this.game.input;
     // keyboard: T = talk (hold, or tap to toggle in open-mic mode), H = listen on / off — not while a menu is open
-    if (useGameStore.getState().overlay === null) {
+    if (this.game.build) {
+      /* Build Home uses T / H for tools: voice there is the 🎧 / 🎤 buttons */
+    } else if (useGameStore.getState().overlay === null) {
       if (inp.wasPressed('listen')) void v.toggleListen();
       if (v.mode === 'push') v.setPush('key', inp.isDown('talk'));
       else if (inp.wasPressed('talk')) void v.toggleTalk();
@@ -379,32 +388,14 @@ export class PvpSession {
     v.update(dt, { x: cam.position.x, y: cam.position.y, z: cam.position.z, fx: f.x, fy: f.y, fz: f.z }, this.voicePos);
   }
 
-  // ---------------------------------------------------------------- emergency respawn
+  // ---------------------------------------------------------------- quick respawn & teleport
 
-  /** Fell into a cave, a ravine or deep water and can't get out? Shown only then. */
-  private updateStuck(dt: number): void {
-    const p = this.game.player;
-    this.rescueCooldown = Math.max(0, this.rescueCooldown - dt);
+  private updateMoves(dt: number): void {
     this.moveCooldown = Math.max(0, this.moveCooldown - dt);
-    if (this.pendingSafe && !p.waitingForGround) {
+    if (this.pendingSafe && !this.game.player.waitingForGround) {
       this.pendingSafe = false;
       this.game.ensureSafePosition();
     }
-    let stuck = false;
-    if (!p.dead && this.phase === 'playing' && this.respawnIn <= 0) {
-      const pos = p.position;
-      const g = this.groundAt(Math.floor(pos.x), Math.floor(pos.z));
-      const underground = pos.y < g.h - 3.5;
-      stuck = p.inWater || underground;
-    }
-    this.stuckTime = stuck ? this.stuckTime + dt : Math.max(0, this.stuckTime - dt * 3);
-    const recentlyHit = !!this.lastHit && performance.now() - this.lastHit.at < 5000;
-    const show = this.stuckTime > (p.inWater ? 5 : 7) && this.rescueCooldown <= 0 && !recentlyHit;
-    if (show !== this.emergency) {
-      this.emergency = show;
-      usePvpStore.getState().set({ emergency: show });
-    }
-    if (show && this.game.input.keyPressed('KeyR')) this.emergencyRespawn();
   }
 
   /** Why a quick respawn / teleport can't happen right now (null = it can). */
@@ -469,11 +460,6 @@ export class PvpSession {
   }
 
   /** 🆘 Teleport next to another player (or a random arena spot). Keeps health & items; no death counted. */
-  emergencyRespawn(): void {
-    if (!this.emergency) return;
-    this.rescue();
-  }
-
   private rescue(): void {
     const p = this.game.player;
     const alive = [...this.remotes.values()].filter((r) => !r.dead && r.rig.root.visible);
@@ -495,10 +481,6 @@ export class PvpSession {
     p.body.vel.set(0, 0, 0);
     p.invulnerable = 2;
     this.game.ensureSafePosition();
-    this.stuckTime = 0;
-    this.rescueCooldown = 30;
-    this.emergency = false;
-    usePvpStore.getState().set({ emergency: false });
     this.game.audio.play('chime');
     useGameStore.getState().toast(alive.length ? 'Rescued! You are back near the other players.' : 'Rescued! Back on solid ground.', 'info', '🆘');
     if (useGameStore.getState().overlay === null) this.game.input.requestLock();
@@ -636,6 +618,10 @@ export class PvpSession {
         }
         case 'ltake':
           return this.grantLoot(String(msg.lid ?? ''), from);
+        case 'ops':
+          msg.id = from;
+          this.net.sendExcept(from, msg);
+          return this.applyOps(msg.ops);
       }
       return;
     }
@@ -684,6 +670,8 @@ export class PvpSession {
       }
       case 'objs':
         return this.addObjects(msg.o);
+      case 'ops':
+        return this.applyOps(msg.ops);
       case 'loot':
         return this.spawnLoot(String(msg.id ?? ''), this.cleanLoot(msg.items, String(msg.id ?? '')));
       case 'lgone':
@@ -714,8 +702,10 @@ export class PvpSession {
     this.net.send(welcome, id);
     // the map changes so far follow in small packets (WebRTC JSON messages must stay under ~16 KB)
     // an opened world: its own block changes and Build Home objects first, then the match's edits
-    for (let i = 0; i < this.baseEdits.length; i += 300) this.net.send({ t: 'base', e: this.baseEdits.slice(i, i + 300) }, id);
-    for (let i = 0; i < this.objectList.length; i += 60) this.net.send({ t: 'objs', o: this.objectList.slice(i, i + 60) }, id);
+    const base = this.game.build ? this.worldEdits() : this.baseEdits;
+    const objs = this.game.build ? this.game.build.objects.serialize() : this.objectList;
+    for (let i = 0; i < base.length; i += 300) this.net.send({ t: 'base', e: base.slice(i, i + 300) }, id);
+    for (let i = 0; i < objs.length; i += 60) this.net.send({ t: 'objs', o: objs.slice(i, i + 60) }, id);
     const edits = [...this.editLog.values()].slice(-12000);
     for (let i = 0; i < edits.length; i += 300) this.net.send({ t: 'b', id: this.selfId, e: edits.slice(i, i + 300) }, id);
     this.broadcastRoster();
@@ -803,28 +793,118 @@ export class PvpSession {
 
   // ---------------------------------------------------------------- an opened Build Home's objects
 
+  /** A sane object from the network (or null). Keeps its id when it has one. */
+  private cleanObject(o: unknown): BuildObjectSave | Omit<BuildObjectSave, 'id'> | null {
+    if (!o || typeof o !== 'object') return null;
+    const v = o as Record<string, unknown>;
+    if (typeof v.itemId !== 'string' || ![v.x, v.y, v.z, v.rotation].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+    const save: Omit<BuildObjectSave, 'id'> & { id?: number } = {
+      itemId: v.itemId, x: v.x as number, y: v.y as number, z: v.z as number, rotation: v.rotation as number,
+      variantId: typeof v.variantId === 'string' ? v.variantId : '', state: v.state && typeof v.state === 'object' ? (v.state as BuildObjectSave['state']) : undefined,
+    };
+    if (Number.isInteger(v.id) && (v.id as number) > 0) save.id = v.id as number;
+    return save;
+  }
+
   /** Show (and collide with) Build Home objects: from the host's lot, or received from the host. */
   private addObjects(raw: unknown): void {
     if (!Array.isArray(raw) || !raw.length) return;
+    const build = this.game.build;
+    if (build) {
+      // Build Home with friends: straight into the real Build Home (same ids, so later edits match up)
+      build.objects.remote = true;
+      try {
+        for (const o of raw.slice(0, 5000)) {
+          const save = this.cleanObject(o);
+          if (save && !('id' in save && save.id !== undefined && build.objects.get(save.id))) build.objects.add(save);
+        }
+      } finally {
+        build.objects.remote = false;
+      }
+      this.relightTimer = 0.5;
+      this.relightsLeft = 8;
+      return;
+    }
     if (!this.objects) {
       this.objects = new BuildObjects(this.game.world, objectMaterials(this.game.assets.uniforms));
       this.game.scene.add(this.objects.group);
     }
     for (const o of raw.slice(0, 5000)) {
-      if (!o || typeof o !== 'object') continue;
-      const v = o as Record<string, unknown>;
-      if (typeof v.itemId !== 'string' || ![v.x, v.y, v.z, v.rotation].every((n) => typeof n === 'number' && Number.isFinite(n))) continue;
-      const save: Omit<BuildObjectSave, 'id'> = {
-        itemId: v.itemId, x: v.x as number, y: v.y as number, z: v.z as number, rotation: v.rotation as number,
-        variantId: typeof v.variantId === 'string' ? v.variantId : '', state: v.state && typeof v.state === 'object' ? (v.state as BuildObjectSave['state']) : undefined,
-      };
-      if (this.objects.add(save)) this.objectList.push(save);
+      const save = this.cleanObject(o);
+      if (!save) continue;
+      const { id: _id, ...rest } = save as BuildObjectSave;
+      if (this.objects.add(rest)) this.objectList.push(rest);
     }
     this.relightTimer = 0.5;
     this.relightsLeft = 8;
   }
 
-  // ---------------------------------------------------------------- loot (a defeated player's items)
+  /** Every block change in this world, as [x, y, z, id | meta << 8] (sent to a friend joining a Build Home). */
+  private worldEdits(): [number, number, number, number][] {
+    const out: [number, number, number, number][] = [];
+    for (const [k, m] of this.game.world.mods) {
+      const cx = ckeyX(k) * CHUNK_SIZE, cz = ckeyZ(k) * CHUNK_SIZE;
+      for (const [idx, v] of m) {
+        const [lx, ly, lz] = indexToLocal(idx);
+        out.push([cx + lx, ly, cz + lz, v]);
+      }
+    }
+    return out;
+  }
+
+  /** A local Build Home object change: queued, and repeated moves of one object (dragging) collapse into one. */
+  private queueOp(op: ObjectOp): void {
+    if (op.k === 'set') {
+      const last = this.outOps[this.outOps.length - 1];
+      if (last && last.k === 'set' && last.id === op.id) {
+        last.p = { ...last.p, ...op.p };
+        return;
+      }
+    }
+    this.outOps.push(op);
+  }
+
+  /** A friend changed the Build Home: apply it here (never echoed back). */
+  private applyOps(raw: unknown): void {
+    const build = this.game.build;
+    if (!build || !Array.isArray(raw)) return;
+    const objs = build.objects;
+    let x = 0, z = 0, n = 0;
+    objs.remote = true;
+    try {
+      for (const op of raw.slice(0, 200) as Record<string, unknown>[]) {
+        if (!op || typeof op !== 'object') continue;
+        if (op.k === 'add') {
+          const save = this.cleanObject(op.o);
+          if (!save || !('id' in save) || save.id === undefined || objs.get(save.id)) continue;
+          if (objs.add(save)) {
+            x += save.x;
+            z += save.z;
+            n++;
+          }
+        } else if (op.k === 'del' && Number.isInteger(op.id)) objs.remove(op.id as number);
+        else if (op.k === 'set' && Number.isInteger(op.id) && op.p && typeof op.p === 'object') {
+          const p = op.p as Record<string, unknown>;
+          const patch: Partial<BuildObjectSave> = {};
+          for (const key of ['x', 'y', 'z', 'rotation'] as const) if (typeof p[key] === 'number' && Number.isFinite(p[key])) patch[key] = p[key] as number;
+          if (typeof p.variantId === 'string') patch.variantId = p.variantId;
+          if (p.state && typeof p.state === 'object') patch.state = p.state as BuildObjectSave['state'];
+          const o = objs.patch(op.id as number, patch);
+          if (o) {
+            x += o.x;
+            z += o.z;
+            n++;
+          }
+        }
+      }
+    } finally {
+      objs.remote = false;
+    }
+    if (n) objs.relightNear(x / n, z / n, 24);
+    if (this.isHost) build.markDirty(); // the host's project saves what friends build
+  }
+
+    // ---------------------------------------------------------------- loot (a defeated player's items)
 
   /**
    * You were taken down: everything you carry (hotbar, backpack, armor, shield) spills on the ground
@@ -1053,6 +1133,10 @@ export class PvpSession {
       this.sendTimer = 1 / SEND_HZ;
       this.sendState();
     }
+    if (this.outOps.length) {
+      const ops = this.outOps.splice(0, 60);
+      this.net.send({ t: 'ops', id: this.selfId, ops });
+    }
     if (this.outEdits.length) {
       const e = this.outEdits.splice(0, 300);
       if (this.isHost) for (const x of e) this.editLog.set(`${x[0]},${x[1]},${x[2]}`, x);
@@ -1093,7 +1177,7 @@ export class PvpSession {
       }
     }
     // respawn
-    this.updateStuck(dt);
+    this.updateMoves(dt);
     this.updateVoice(dt);
     if (this.respawnIn > 0 && this.phase === 'playing') {
       this.respawnIn -= dt;
@@ -1111,6 +1195,7 @@ export class PvpSession {
     this.disposed = true;
     this.game.world.onSet = null;
     this.game.drops.onNetPickup = null;
+    if (this.game.build) this.game.build.objects.onOp = null;
     this.game.drops.clearNet();
     if (this.objects) {
       this.game.scene.remove(this.objects.group);

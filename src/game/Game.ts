@@ -209,6 +209,8 @@ export class Game {
       this.input.allowUnlocked = true;
       this.input.captureShortcuts = true;
     }
+    // Build Home opened to friends: the full Build Home, plus the shared room (players, voice, edits)
+    if (init.meta.coop) this.pvp = new PvpSession(this);
     if (init.meta.mode === 'pvp') {
       if (init.meta.arena) {
         // flat arenas get the same distant scenery as Build Home lots
@@ -248,7 +250,19 @@ export class Game {
     onProgress(0.02, 'Packing backpack');
     await this.assets.generateIcons(this.renderer, (f) => onProgress(0.02 + f * 0.18, 'Packing backpack'));
     if (this.disposed) return;
-    if (this.build) return this.startBuild(state, onProgress);
+    if (this.build) {
+      await this.startBuild(state, onProgress);
+      if (this.pvp && !this.disposed) {
+        // a friend's lot: start where the host is standing
+        const sp = this.pvp.settings.source?.spawn;
+        if (this.meta.coop === 'guest' && sp) {
+          this.player.teleport(sp.x + (Math.random() - 0.5) * 6, PLOT_Y + 1.05, sp.z + 2 + Math.random() * 3);
+          this.ensureSafePosition();
+        }
+        this.pvp.begin();
+      }
+      return;
+    }
     if (this.pvp) return this.startPvp(onProgress);
     const ws = useWorldStore.getState();
     const inv = useInventoryStore.getState();
@@ -626,6 +640,8 @@ export class Game {
       else this.player.updateCamera(this.camera, dt);
       this.camera.updateMatrixWorld();
       this.build.update(dt, simulate);
+      this.pvp?.update(dt);
+      this.fx.update(dt);
       if (simulate) this.farming.update(dt, this.world, this.growthNow(), this.env.rain > 0.3);
       this.sky.follow(this.camera);
       this.backdrop?.follow(this.camera);
@@ -1062,7 +1078,8 @@ export class Game {
   }
 
   async saveNow(reason: 'auto' | 'pause' | 'quit' | 'sleep' | 'created' | 'hidden' | 'quiet'): Promise<void> {
-    if (!this.ready || this.saving || this.pvp) return;
+    // matches aren't saved; a Build Home you opened to friends keeps saving (your own project)
+    if (!this.ready || this.saving || (this.pvp && this.meta.coop !== 'host')) return;
     this.saving = true;
     try {
       // keep an open chest's live contents

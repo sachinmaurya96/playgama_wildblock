@@ -379,6 +379,12 @@ export class BuildMode implements EditTarget {
     useBuildStore.getState().set({ dayFraction: c.dayFraction });
   }
 
+  /** Something changed that isn't in the undo history (a friend built here): save soon. */
+  markDirty(): void {
+    useBuildStore.getState().set({ dirty: true });
+    this.saveDebounce = 5;
+  }
+
   setWeather(w: 'clear' | 'cloudy' | 'rain'): void {
     this.game.env.setWeather(w, 1e9);
     useBuildStore.getState().set({ weather: w });

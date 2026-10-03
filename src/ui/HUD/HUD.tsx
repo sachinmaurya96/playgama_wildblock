@@ -12,7 +12,7 @@ import { ItemSlot } from '../common/ItemSlot';
 import { DebugPanel } from './DebugPanel';
 import { Toasts } from './Toasts';
 import { BuildHUD } from '../Build/BuildHUD';
-import { PvpHud } from './PvpHud';
+import { CoopBar, PvpHud } from './PvpHud';
 import { usePvpStore } from '../../stores/pvpStore';
 import { armorStats } from '../../game/player/Player';
 
@@ -24,6 +24,7 @@ export function HUD() {
     return (
       <div className="hud">
         <BuildHUD />
+        <CoopBar />
         <Toasts />
         <DebugPanel />
       </div>

@@ -3,7 +3,7 @@ import { HUD } from '../ui/HUD/HUD';
 import { Overlays } from '../ui/Overlays';
 import { TouchControls } from '../ui/Touch/TouchControls';
 import { useGameStore } from '../stores/gameStore';
-import { takePendingLaunch } from './launch';
+import { launchKey, takePendingLaunch } from './launch';
 
 /** In-world view: the 3D canvas plus all React overlays (HUD, menus, inventory...). */
 export default function GameView() {
@@ -13,7 +13,7 @@ export default function GameView() {
   return (
     <>
       <div className="canvas-wrap">
-        <GameCanvas key={launch.meta.id} launch={launch} />
+        <GameCanvas key={launchKey(launch)} launch={launch} />
       </div>
       {screen === 'playing' && (
         <div className="ui-root">

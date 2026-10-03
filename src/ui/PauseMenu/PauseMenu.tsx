@@ -100,7 +100,11 @@ function BuildPause({ resume, quit, busy, onControls }: { resume: () => void; qu
           <button className="btn build-home-btn" onClick={resume} autoFocus>Keep building</button>
           <button className="btn" onClick={() => { useGameStore.getState().setOverlay(null); useBuildStore.getState().set({ walkthrough: false }); Game.current?.build?.setWalkthrough(true); Game.current?.input.requestLock(); }}>🚶 Walkthrough</button>
           <button className="btn" onClick={() => { useGameStore.getState().setOverlay(null); Game.current?.build?.togglePhoto(); }}>📷 Photo mode</button>
-          <button className="btn pvp-btn" onClick={() => useGameStore.getState().setOverlay('settings')}>🎮 Play this home with friends</button>
+          {Game.current?.pvp ? (
+            <button className="btn" onClick={() => void copyInvite(usePvpStore.getState().code)}>📋 Invite friends · {usePvpStore.getState().code}</button>
+          ) : (
+            <button className="btn pvp-btn" onClick={() => useGameStore.getState().setOverlay('settings')}>🎮 Build this home with friends</button>
+          )}
           <button className="btn" onClick={() => useGameStore.getState().setOverlay('settings')}>Settings</button>
           <button className="btn" onClick={onControls}>Controls</button>
           <button className="btn small ghost" onClick={tutorial}>Show the tutorial again</button>

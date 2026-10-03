@@ -128,6 +128,9 @@ function cellKey(cx: number, cz: number): number {
   return (cx + 32768) * 65536 + (cz + 32768);
 }
 
+/** One Build Home object change, as sent to friends building on the same lot. */
+export type ObjectOp = { k: 'add'; o: BuildObjectSave } | { k: 'del'; id: number } | { k: 'set'; id: number; p: Partial<BuildObjectSave> };
+
 export class BuildObjects {
   readonly group = new THREE.Group();
   readonly objects = new Map<number, PlacedObject>();
@@ -154,6 +157,11 @@ export class BuildObjects {
 
   // ---------------------------------------------------------------- CRUD
 
+  /** Build Home with friends: told about every change made here (not the ones applied while `remote` is set). */
+  onOp: ((op: ObjectOp) => void) | null = null;
+  /** Applying a friend's change: don't report it back. */
+  remote = false;
+
   add(save: Omit<BuildObjectSave, 'id'> & { id?: number }): PlacedObject | null {
     const def = objectDef(save.itemId);
     if (!def) {
@@ -173,6 +181,7 @@ export class BuildObjects {
     this.index(o);
     if (def.interaction === 'label') this.updateLabel(o);
     this.onChanged?.();
+    if (!this.remote) this.onOp?.({ k: 'add', o: toSave(o) });
     return o;
   }
 
@@ -191,6 +200,7 @@ export class BuildObjects {
       this.labelSprites.delete(id);
     }
     this.onChanged?.();
+    if (!this.remote) this.onOp?.({ k: 'del', id });
     return o;
   }
 
@@ -218,6 +228,7 @@ export class BuildObjects {
     this.boxCache.delete(id);
     if (o.def.interaction === 'label') this.updateLabel(o);
     this.onChanged?.();
+    if (!this.remote) this.onOp?.({ k: 'set', id, p: { ...patch } });
     return o;
   }
 
