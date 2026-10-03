@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.0 — Loot drops, gyro aiming & separate talk / listen
+
+- **Character faces where you move**: in third person your explorer turns toward the joystick / WASD direction (walking left shows them walking left), and squares up to the camera while attacking, using or aiming. Other PvP players see your body direction too. Toggle: Settings → Gameplay.
+- **PvP loot drops**: when a player is taken down in a Battle match, everything they carried (hotbar, backpack, armor, shield) spills on the ground where they fell, on every player's screen. Walk over it to pick it up. The host decides who gets each item (first come, first served), so two players grabbing the same item can't duplicate it. The defeated player respawns with a fresh kit as before. Loot disappears after 3 minutes or when a new round starts. (Not in Build Together.)
+- **🎯 Gyro aiming (optional)** for phones & tablets: turn the device to aim, together with drag-to-look. Off by default. Settings → Controls has device profiles (Auto / 📱 Phone / 📲 Tablet), sensitivity, vertical speed, smoothing, invert left/right and up/down, "always" or "only while attacking / aiming", and a live "gyro is working" check. Asks for motion permission on iOS. Also a quick On/Off in the PvP ⚙️ panel.
+- **Voice chat: separate 🎧 Listen and 🎤 Talk** buttons on screen (above the joystick on touch, under the radar on desktop). Listen works without a microphone; the mic is only requested the first time you talk. Talk is "hold to talk" or "tap on / off". Keys: **T** talk, **H** listen. Players who aren't listening are marked in the voice list; you can stop using the mic or leave voice from the ⚙️ panel.
+- **PvP quick options on desktop**: press **O** (rebindable) to open / close the ⚙️ panel (camera 1st / 3rd person, voice, controls, exit) — the mouse is freed while it's open; O, Esc, ✕ or clicking the game closes it.
+- **Responsive fixes** (automated audit on 14 screen sizes, 568×320 phone to 1920×1080 desktop, plus portrait): backpack panel cut off its Craft buttons and scarf picker on desktops; the journal list spilled out of its panel on phones; PvP match chips covered the energy bar on desktop windows narrower than 1280 px (chips now sit top-right there); the hotbar overlapped the joystick and buttons on small phones; the compass overlapped the top buttons on 667 px phones; Settings had almost no room on short landscape phones.
+
 ## 1.2.4 — Scrolling panels on every device
 
 - **PvP host screen overflowed and couldn't scroll** on tablets and laptops (the long list of styles, maps, kits and options ran off the screen). All menu forms (PvP, New World, Build Home, Worlds, Settings, How to Play) now scroll inside the panel with touch swipe, mouse wheel and trackpad; nothing gets squashed.

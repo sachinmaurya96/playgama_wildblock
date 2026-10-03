@@ -13,6 +13,7 @@ import { DebugPanel } from './DebugPanel';
 import { Toasts } from './Toasts';
 import { BuildHUD } from '../Build/BuildHUD';
 import { PvpHud } from './PvpHud';
+import { usePvpStore } from '../../stores/pvpStore';
 import { armorStats } from '../../game/player/Player';
 
 export function HUD() {
@@ -379,16 +380,21 @@ function ClickToPlay() {
     on();
     return () => document.removeEventListener('pointerlockchange', on);
   }, []);
+  const pvp = useGameStore((s) => s.world?.mode === 'pvp');
   const isTouch = touchEnabled(touch);
   if (locked || overlay !== null || isTouch) return null;
   return (
     <button
       className="click-to-play"
-      onClick={() => Game.current?.input.requestLock()}
+      onClick={() => {
+        const g = Game.current;
+        if (g?.pvp && usePvpStore.getState().gearOpen) g.setPvpOptions(false);
+        else g?.input.requestLock();
+      }}
     >
       <span className="ctp-card">
-        <b>Click to continue exploring</b>
-        <small>Mouse to look · WASD to move · E backpack · Esc pause</small>
+        <b>{pvp ? 'Click to get back in the match' : 'Click to continue exploring'}</b>
+        <small>{pvp ? 'Mouse to look · WASD to move · O quick options · Esc pause' : 'Mouse to look · WASD to move · E backpack · Esc pause'}</small>
       </span>
     </button>
   );

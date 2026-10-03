@@ -75,10 +75,20 @@ interface PvpState {
   respawnIn: number;
   killedBy: string | null;
   scoreboardOpen: boolean;
+  /** The ⚙️ quick-options panel (camera, voice, controls…) — key O on desktop. */
+  gearOpen: boolean;
   /** Local player is stuck (cave / ravine / deep water): offer the 🆘 respawn. */
   emergency: boolean;
-  /** Voice chat (see net/voice.ts). */
+  /** Voice chat (see net/voice.ts). voiceOn = connected to voice (listening and / or talking). */
   voiceOn: boolean;
+  /** 🎧 hearing the others. */
+  voiceListen: boolean;
+  /** 🎤 open mic switched on (tap-to-talk mode). */
+  voiceMicOn: boolean;
+  /** Microphone allowed & in use (push-to-talk is instant once this is true). */
+  voiceMicReady: boolean;
+  /** Players in voice who switched listening off. */
+  voiceDeaf: string[];
   voiceMode: 'push' | 'open';
   voiceProximity: boolean;
   /** Your mic is live right now (open mic, or push-to-talk held). */
@@ -99,7 +109,7 @@ let feedId = 1;
 const initial = {
   active: false, code: '', online: true, isHost: false, selfId: '', settings: DEFAULT_PVP_SETTINGS, players: [] as PvpPlayerInfo[],
   feed: [] as KillFeedEntry[], timeLeft: null as number | null, phase: 'playing' as const, winner: null as string | null, respawnIn: 0,
-  killedBy: null as string | null, scoreboardOpen: false, emergency: false, voiceOn: false, voiceMode: 'push' as 'push' | 'open', voiceProximity: true, voiceTalking: false,
+  killedBy: null as string | null, scoreboardOpen: false, gearOpen: false, emergency: false, voiceOn: false, voiceListen: false, voiceMicOn: false, voiceMicReady: false, voiceDeaf: [] as string[], voiceMode: 'push' as 'push' | 'open', voiceProximity: true, voiceTalking: false,
   voicePeers: [] as string[], voiceMuted: [] as string[], voiceSpeaking: [] as string[], voiceError: null as string | null, status: null as string | null,
 };
 

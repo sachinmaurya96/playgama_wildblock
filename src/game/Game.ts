@@ -14,6 +14,7 @@ import { BuildMode } from './build/BuildMode';
 import { PlotBackdrop } from './rendering/PlotBackdrop';
 import { PLOT_Y } from './world/PlotGenerator';
 import { useBuildStore } from '../stores/buildStore';
+import { usePvpStore } from '../stores/pvpStore';
 import { AssetManager } from './core/AssetManager';
 import { audio } from './core/audio';
 import type { AudioManager, Mood } from './core/AudioManager';
@@ -576,6 +577,23 @@ export class Game {
     if (inp.keyPressed('Escape') && o !== null && o !== 'pause' && o !== 'death') this.closeOverlay();
     if (inp.keyPressed('F3')) useSettingsStore.getState().update('gameplay', { showDebug: !useSettingsStore.getState().gameplay.showDebug });
     if (inp.wasPressed('hideHud') && o === null) useGameStore.setState({ hudHidden: !gs.hudHidden });
+    // PvP: O opens / closes the ⚙️ quick options (camera, voice, controls, exit) — Esc closes it too
+    if (this.pvp && o === null) {
+      const gearOpen = usePvpStore.getState().gearOpen;
+      if (inp.wasPressed('options')) this.setPvpOptions(!gearOpen);
+      else if (gearOpen && inp.keyPressed('Escape')) this.setPvpOptions(false);
+    }
+  }
+
+  /** PvP ⚙️ quick options panel: frees the mouse while open, recaptures it when closed. */
+  setPvpOptions(open: boolean): void {
+    if (open) {
+      this.releasePointer();
+      usePvpStore.getState().set({ gearOpen: true, scoreboardOpen: false });
+    } else {
+      usePvpStore.getState().set({ gearOpen: false });
+      if (useGameStore.getState().overlay === null) this.input.requestLock();
+    }
   }
 
   // ---------------------------------------------------------------- main loop

@@ -354,9 +354,12 @@
   height: min(700px, 94vh);
   max-height: 100%;
   max-width: 100%;
+  /* one row that never grows past the panel: tall columns scroll on their own instead of being cut off */
+  grid-template-rows: minmax(0, 1fr);
   animation: popIn 0.2s ease;
 }
-@media (max-width: 1100px), (max-height: 600px) { .inventory-panel { grid-template-columns: auto minmax(280px, 1fr); overflow-y: auto; height: auto; max-height: 100%; } .crafting { overflow: visible; } .recipe-list { max-height: 260px; } .character-card { grid-column: 1 / -1; flex-direction: row !important; flex-wrap: wrap; } }
+.inventory-panel > .character-card, .inventory-panel > .inv-center { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+@media (max-width: 1100px), (max-height: 600px) { .inventory-panel { grid-template-columns: auto minmax(280px, 1fr); grid-template-rows: auto; overflow-y: auto; height: auto; max-height: 100%; } .inventory-panel > .character-card, .inventory-panel > .inv-center { overflow-y: visible; } .crafting { overflow: visible; } .recipe-list { max-height: 260px; } .character-card { grid-column: 1 / -1; flex-direction: row !important; flex-wrap: wrap; } }
 @media (max-width: 700px) { .inventory-panel { grid-template-columns: 1fr; } }
 .character-card { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
 .portrait { width: 100%; max-width: 200px; height: auto; align-self: center; }
@@ -423,7 +426,9 @@
 /* ============================================================= journal / map / dialogs */
 .journal-panel { width: min(860px, 100%); max-height: min(90vh, 100%); padding: 22px; display: flex; flex-direction: column; gap: 12px; }
 .journal-tabs .tab { font-size: 0.82em; }
-.journal-page { display: flex; flex-direction: column; gap: 8px; padding-right: 6px; min-height: 240px; }
+.journal-page { display: flex; flex-direction: column; gap: 8px; padding-right: 6px; flex: 1 1 auto; min-height: min(240px, 30vh); }
+.journal-panel > .journal-tabs { flex-shrink: 0; }
+@media (max-height: 520px) { .journal-panel { padding: 14px 16px; gap: 8px; } .journal-tabs .tab { padding: 0.25em 0.6em; } }
 .entry { display: flex; gap: 12px; background: rgba(255, 255, 255, 0.55); border: 2px solid var(--paper-3); border-radius: 12px; padding: 10px 12px; }
 .entry.unknown { opacity: 0.6; }
 .entry-title { font-weight: 900; color: var(--wood-dark); }
@@ -538,6 +543,7 @@
   .touch-ui .touch-buttons.vertical .t-c { right: 56px; }
   .touch-ui .meter-bar { width: 84px; }
   .touch-ui .quest { width: 170px; }
+  .touch-ui .compass-wrap { transform: translateX(-50%) scale(0.64); }
 }
 /* tablets: roomier controls */
 @media (min-width: 1000px) and (min-height: 600px) {
@@ -717,15 +723,32 @@ button.pvp-chip { cursor: pointer; }
 .voice-row .dot { width: 10px; height: 10px; border-radius: 50%; }
 .voice-row .btn { width: auto !important; min-height: 28px; padding: 2px 10px; }
 .voice-row.speaking { background: rgba(127, 174, 90, 0.3); }
-.voice-hud { position: absolute; left: max(14px, var(--safe-l)); top: max(176px, calc(var(--safe-t) + 170px)); display: flex; flex-direction: column; gap: 4px; align-items: flex-start; z-index: 3; }
-.voice-me, .voice-chip { background: rgba(30, 22, 14, 0.62); color: #fff6e0; border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 800; border: 2px solid transparent; white-space: nowrap; }
-.voice-me.live { background: rgba(200, 60, 50, 0.9); }
-.voice-chip { animation: popIn 0.15s ease; }
-.talk-btn { position: absolute; left: max(24px, calc(var(--safe-l) + 16px)); bottom: max(150px, calc(var(--safe-b) + 142px)); width: 56px; height: 56px; border-radius: 50%; border: 3px solid rgba(255, 246, 224, 0.75); background: rgba(40, 30, 20, 0.55); font-size: 28px; z-index: 6; pointer-events: auto !important; touch-action: none; }
-.talk-btn.live { background: rgba(200, 60, 50, 0.9); transform: scale(1.08); }
-.touch-ui .voice-hud { top: max(126px, calc(var(--safe-t) + 120px)); }
-.touch-ui .voice-me, .touch-ui .voice-chip { font-size: 10px; }
-@media (max-height: 420px) { .voice-hud { top: max(140px, calc(var(--safe-t) + 134px)); } .touch-ui .voice-hud { top: max(118px, calc(var(--safe-t) + 112px)); } }
+.voice-chip { background: rgba(30, 22, 14, 0.62); color: #fff6e0; border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 800; border: 2px solid transparent; white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; animation: popIn 0.15s ease; }
+/* 🎧 listen + 🎤 talk: under the radar on desktop, above the joystick on phones & tablets */
+.voice-dock { position: absolute; left: max(14px, var(--safe-l)); top: max(176px, calc(var(--safe-t) + 170px)); display: flex; flex-direction: column; gap: 6px; align-items: flex-start; z-index: 6; }
+.hud > .voice-dock, .hud > .voice-dock * { pointer-events: auto; }
+.voice-btns { display: flex; gap: 6px; }
+.voice-speakers { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.vbtn { display: flex; align-items: center; gap: 6px; border: 2px solid rgba(255, 246, 224, 0.45); background: rgba(30, 22, 14, 0.62); color: #fff6e0; border-radius: 999px; padding: 3px 10px 3px 4px; font-family: inherit; font-weight: 800; cursor: pointer; touch-action: none; -webkit-user-select: none; user-select: none; transition: background 0.12s, transform 0.12s; }
+.vbtn .vicon { font-size: 17px; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(255, 255, 255, 0.12); }
+.vbtn small { font-size: 12px; display: flex; gap: 5px; align-items: center; white-space: nowrap; }
+.vbtn kbd { font: inherit; font-size: 10px; border: 1.5px solid rgba(255, 246, 224, 0.6); border-radius: 5px; padding: 0 4px; opacity: 0.85; }
+.vbtn.listen.on { background: rgba(63, 107, 58, 0.88); border-color: #9fd66a; }
+.vbtn.listen.off .vicon { opacity: 0.75; }
+.vbtn.talk.on { background: rgba(224, 178, 61, 0.9); border-color: #ffe08a; color: var(--ink); }
+.vbtn.talk.live { background: rgba(200, 60, 50, 0.92); border-color: #ffb0a0; transform: scale(1.05); }
+.touch-ui .voice-dock { top: auto; left: max(18px, calc(var(--safe-l) + 12px)); bottom: max(150px, calc(var(--safe-b) + 144px)); flex-direction: column-reverse; }
+.touch-ui .vbtn, .touch-ui .vbtn.listen.on, .touch-ui .vbtn.talk.on, .touch-ui .vbtn.talk.live { flex-direction: column; gap: 1px; padding: 0; background: transparent; border: none; transform: none; color: #fff6e0; }
+.touch-ui .vbtn .vicon { width: 50px; height: 50px; font-size: 23px; border: 3px solid rgba(255, 250, 235, 0.6); background: rgba(40, 30, 20, 0.5); backdrop-filter: blur(2px); }
+.touch-ui .vbtn small { font-size: 9px; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9); }
+.touch-ui .vbtn.listen.on .vicon { background: rgba(63, 107, 58, 0.88); border-color: #9fd66a; }
+.touch-ui .vbtn.talk.on .vicon { background: rgba(224, 178, 61, 0.9); border-color: #ffe08a; }
+.touch-ui .vbtn.talk.live .vicon { background: rgba(200, 60, 50, 0.92); border-color: #ffb0a0; transform: scale(1.08); }
+.touch-ui .voice-chip { font-size: 10px; max-width: 130px; }
+@media (max-width: 720px) { .touch-ui .voice-dock { bottom: max(132px, calc(var(--safe-b) + 126px)); } }
+@media (max-height: 420px) { .touch-ui .vbtn .vicon { width: 44px; height: 44px; font-size: 20px; } .voice-dock { top: max(140px, calc(var(--safe-t) + 134px)); } }
+@media (min-width: 1000px) and (min-height: 600px) { .touch-ui .voice-dock { bottom: max(200px, calc(var(--safe-b) + 194px)); } .touch-ui .vbtn .vicon { width: 60px; height: 60px; font-size: 27px; } .touch-ui .vbtn small { font-size: 11px; } }
+.pvp-chip .chip-key { margin-left: 4px; font-size: 10px; border: 1.5px solid rgba(255, 246, 224, 0.6); border-radius: 5px; padding: 0 4px; vertical-align: 1px; }
 .touch-ui .hud.pvp-hud .armor-chip { display: none; }
 /* in-game dialogs never run off short (landscape phone) screens: they scroll */
 .pause-panel, .death-panel, .sleep-panel, .lore-panel, .confirm-panel, .controls-panel { max-height: 100%; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
@@ -743,4 +766,43 @@ button.pvp-chip { cursor: pointer; }
 .pause-panel::before, .controls-panel::before, .gear-panel::before, .scoreboard::before { display: none; }
 .form-panel, .worlds-panel, .settings-panel, .howto-panel, .credits-panel, .pause-panel, .controls-panel, .gear-panel, .scoreboard {
   box-shadow: var(--shadow), inset 0 0 0 3px rgba(255, 255, 255, 0.5), inset 0 0 0 7px rgba(255, 255, 255, 0), inset 0 0 0 8.5px rgba(122, 82, 48, 0.18);
+}
+/* gyro settings */
+.gyro-section { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; margin: 4px 0 8px; border-radius: 12px; background: rgba(63, 107, 58, 0.08); }
+.gyro-section .voice-err, .gyro-status { margin: 0; font-size: 0.85em; }
+.gyro-section > .btn { align-self: flex-start; }
+
+/* ---- responsive fixes (audited on 568×320 → 1920×1080) */
+/* PvP on smaller desktop windows: the radar + vitals column is wide, so the match chips move to the
+   top-right (like on tablets), the compass is hidden (the radar has a north marker) and ⚙️ options open under the chips */
+@media (max-width: 1279px) {
+  html:not(.touch-ui) .hud.pvp-hud .compass-wrap { display: none; }
+  html:not(.touch-ui) .pvp-top { left: auto; right: max(14px, var(--safe-r)); transform: none; top: max(12px, var(--safe-t)); }
+  html:not(.touch-ui) .kill-feed { top: max(52px, calc(var(--safe-t) + 46px)); }
+  html:not(.touch-ui) .gear-panel { left: auto; right: max(14px, var(--safe-r)); transform: none; top: max(52px, calc(var(--safe-t) + 46px)); max-height: calc(100% - 64px); }
+}
+@media (max-height: 640px) { html:not(.touch-ui) .gear-panel { max-height: calc(100% - 64px); } }
+/* small landscape phones (iPhone SE 1st gen, small Androids): everything has to fit between the joystick and the buttons */
+@media (max-width: 600px) {
+  .touch-ui .hotbar { gap: 2px; padding: 3px; }
+  .touch-ui .hotbar .slot { width: 29px; height: 29px; border-radius: 7px; }
+  .touch-ui .hotbar .slot .item-icon { width: 22px !important; height: 22px !important; }
+  .touch-ui .hotbar .slot .count { font-size: 9px; right: 2px; }
+  .touch-ui .compass-wrap { transform: translateX(-50%) scale(0.58); }
+  .touch-ui .touch-top .tbtn.small { width: 38px; height: 38px; font-size: 16px; }
+  .touch-ui .meter-bar { width: 66px; }
+  .touch-ui .pvp-chip { font-size: 10px; padding: 1px 6px; }
+  .touch-ui .pvp-chip.code small { display: none; }
+  .touch-ui .pvp-top { gap: 4px; top: max(50px, calc(var(--safe-t) + 44px)); }
+  .touch-ui .kill-feed { top: max(80px, calc(var(--safe-t) + 74px)); }
+}
+.gear-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--wood-dark); }
+.gear-head small { font-weight: 700; font-size: 0.75em; }
+.gear-x { flex: 0 0 auto; width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--wood-light); background: var(--paper); color: var(--ink); font-weight: 900; font-family: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
+/* very short screens (landscape phones): the ✕ closes Settings, so the footer makes room for the options */
+@media (max-height: 420px) {
+  .settings-panel .settings-foot { display: none; }
+  .settings-panel .panel-title { font-size: 1.1em; }
+  .settings-panel .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
+  .settings-panel .tabs .tab { flex-shrink: 0; padding: 0.3em 0.75em; }
 }

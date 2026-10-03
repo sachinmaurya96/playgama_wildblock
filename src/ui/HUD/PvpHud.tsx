@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Game } from '../../game/Game';
 import { useGameStore } from '../../stores/gameStore';
 import { usePvpStore } from '../../stores/pvpStore';
-import { useSettingsStore } from '../../stores/settingsStore';
+import { keyLabel, useSettingsStore } from '../../stores/settingsStore';
+import { Gyro } from '../../game/core/Gyro';
 
 export function fmtTime(s: number): string {
   const m = Math.floor(s / 60);
@@ -37,7 +38,9 @@ export function PvpHud() {
   const me = players.find((p) => p.id === selfId);
   const open = usePvpStore((s) => s.scoreboardOpen);
   const together = usePvpStore((s) => s.settings.style === 'together');
-  const [gear, setGear] = useState(false);
+  const gear = usePvpStore((s) => s.gearOpen);
+  const optKey = useSettingsStore((s) => keyLabel(s.controls.keys.options));
+  const touch = !!Game.current?.input.touch.active;
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.code !== 'Tab' || useGameStore.getState().overlay !== null) return;
@@ -68,9 +71,11 @@ export function PvpHud() {
             ⚔️ {me?.kills ?? 0}{killLimit > 0 ? <small>/{killLimit}</small> : null} <small>· 💀 {me?.deaths ?? 0}</small> 🏆
           </button>
         )}
-        <button className={`pvp-chip gear ${gear ? 'on' : ''}`} aria-label="Game options" title="Options: camera, controls, exit" onClick={() => { if (!gear) Game.current?.releasePointer(); setGear(!gear); }}>⚙️</button>
+        <button className={`pvp-chip gear ${gear ? 'on' : ''}`} aria-label="Game options" title={`Options: camera, voice, controls, exit (${optKey})`} onClick={() => Game.current?.setPvpOptions(!gear)}>
+          ⚙️{!touch && <small className="chip-key">{optKey}</small>}
+        </button>
       </div>
-      {gear && <GearPanel close={() => setGear(false)} />}
+      {gear && <GearPanel />}
       <Radar />
       <VoiceHud />
       <KillFeed />
@@ -326,8 +331,10 @@ function EmergencyButton() {
 }
 
 /** ⚙️ quick options for a PvP game: camera view, controls, scoreboard, invite, settings and exit. */
-function GearPanel({ close }: { close: () => void }) {
+function GearPanel() {
+  const close = () => usePvpStore.getState().set({ gearOpen: false });
   const code = usePvpStore((s) => s.code);
+  const keys = useSettingsStore((s) => s.controls.keys);
   const camera = useSettingsStore((s) => s.gameplay.cameraMode);
   const [confirmExit, setConfirmExit] = useState(false);
   const [help, setHelp] = useState(false);
@@ -338,8 +345,8 @@ function GearPanel({ close }: { close: () => void }) {
     useSettingsStore.getState().update('gameplay', { cameraMode: mode });
   };
   const back = () => {
-    close();
-    if (!touch && useGameStore.getState().overlay === null) Game.current?.input.requestLock();
+    if (touch) close();
+    else Game.current?.setPvpOptions(false);
   };
   const exit = () => {
     if (!confirmExit) return setConfirmExit(true);
@@ -348,6 +355,10 @@ function GearPanel({ close }: { close: () => void }) {
   };
   return (
     <div className="gear-panel panel" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="gear-head">
+        <b>⚙️ Options{!touch && <small className="muted"> · {keyLabel(keys.options)} / Esc to close</small>}</b>
+        <button className="gear-x" onClick={back} aria-label="Close options">✕</button>
+      </div>
       <div className="gear-row">
         <span>👁️ Camera</span>
         <div className="seg">
@@ -355,6 +366,7 @@ function GearPanel({ close }: { close: () => void }) {
           <button className={`seg-btn ${camera === 'third' ? 'active' : ''}`} onClick={() => setCamera('third')}>3rd person</button>
         </div>
       </div>
+      {touch && <GyroRow />}
       <VoicePanel />
       <button className="btn small" onClick={() => setHelp(!help)}>🎮 Controls</button>
       {help && (
@@ -364,14 +376,16 @@ function GearPanel({ close }: { close: () => void }) {
               <div><b>Left stick</b> move · push to the rim to sprint</div>
               <div><b>Drag right side</b> look · <b>tap</b> attack / use · <b>hold</b> dig</div>
               <div><b>⛏️</b> attack / break · <b>🧱 / 🏹</b> place / shoot · <b>⤒</b> jump · <b>⤓</b> crouch</div>
-              <div><b>🎤</b> hold to talk (voice chat) · <b>🏆</b> players · <b>🎒</b> backpack · <b>⚙️</b> this menu</div>
+              <div><b>🎤</b> talk · <b>🎧</b> listen (voice chat) · <b>🏆</b> players · <b>🎒</b> backpack · <b>⚙️</b> this menu</div>
+              <div><b>Gyro</b> (optional): turn the device to aim — switch it on above</div>
             </>
           ) : (
             <>
               <div><b>WASD</b> move · <b>Shift</b> sprint · <b>Space</b> jump · <b>Ctrl</b> crouch</div>
               <div><b>Left click</b> attack / break · <b>Right click</b> place / shoot bow</div>
-              <div><b>1–9</b> hotbar · <b>E</b> backpack · <b>V</b> camera · <b>Tab</b> players</div>
-              <div><b>T</b> hold to talk (voice chat) · <b>R</b> emergency respawn (when stuck) · <b>Esc</b> pause</div>
+              <div><b>1–9</b> hotbar · <b>{keyLabel(keys.inventory)}</b> backpack · <b>{keyLabel(keys.camera)}</b> camera · <b>Tab</b> players</div>
+              <div><b>{keyLabel(keys.options)}</b> this options panel · <b>Esc</b> pause · <b>R</b> emergency respawn (when stuck)</div>
+              <div><b>{keyLabel(keys.talk)}</b> talk · <b>{keyLabel(keys.listen)}</b> listen on / off (voice chat)</div>
             </>
           )}
         </div>
@@ -385,91 +399,153 @@ function GearPanel({ close }: { close: () => void }) {
   );
 }
 
-/** Voice chat section of the ⚙️ panel: join / leave, push-to-talk or open mic, proximity, per-player mute. */
+/** Gyro aiming quick switch (phones & tablets); fine-tuning lives in Settings → Controls. */
+function GyroRow() {
+  const gyro = useSettingsStore((s) => s.controls.gyro);
+  const [err, setErr] = useState<string | null>(null);
+  const set = async (on: boolean) => {
+    setErr(null);
+    if (on && !(await Gyro.requestPermission())) {
+      setErr(Gyro.supported() ? 'Motion access was not allowed.' : 'This device has no gyroscope.');
+      return;
+    }
+    useSettingsStore.getState().update('controls', { gyro: { ...gyro, enabled: on } });
+  };
+  return (
+    <>
+      <div className="gear-row">
+        <span>🎯 Gyro aim</span>
+        <div className="seg">
+          <button className={`seg-btn ${!gyro.enabled ? 'active' : ''}`} onClick={() => void set(false)}>Off</button>
+          <button className={`seg-btn ${gyro.enabled ? 'active' : ''}`} onClick={() => void set(true)}>On</button>
+        </div>
+      </div>
+      {err && <small className="voice-err">{err}</small>}
+    </>
+  );
+}
+
+/** Voice chat section of the ⚙️ panel: listen / talk, talk style, proximity, per-player mute, leave voice. */
 function VoicePanel() {
   const on = usePvpStore((s) => s.voiceOn);
+  const listen = usePvpStore((s) => s.voiceListen);
+  const micReady = usePvpStore((s) => s.voiceMicReady);
   const mode = usePvpStore((s) => s.voiceMode);
   const prox = usePvpStore((s) => s.voiceProximity);
   const peers = usePvpStore((s) => s.voicePeers);
+  const deaf = usePvpStore((s) => s.voiceDeaf);
   const muted = usePvpStore((s) => s.voiceMuted);
   const speaking = usePvpStore((s) => s.voiceSpeaking);
   const err = usePvpStore((s) => s.voiceError);
   const players = usePvpStore((s) => s.players);
-  const [busy, setBusy] = useState(false);
+  const keys = useSettingsStore((s) => s.controls.keys);
   const touch = !!Game.current?.input.touch.active;
   const voice = () => Game.current?.pvp?.voice;
   return (
     <div className="voice-panel">
       <div className="gear-row">
-        <span>🎤 Voice chat</span>
+        <span>🎧 Listen</span>
         <div className="seg">
-          <button className={`seg-btn ${!on ? 'active' : ''}`} onClick={() => voice()?.disable()}>Off</button>
-          <button className={`seg-btn ${on ? 'active' : ''}`} disabled={busy} onClick={async () => { setBusy(true); await voice()?.enable(); setBusy(false); }}>{busy ? '…' : 'On'}</button>
+          <button className={`seg-btn ${!listen ? 'active' : ''}`} onClick={() => void voice()?.setListen(false)}>Off</button>
+          <button className={`seg-btn ${listen ? 'active' : ''}`} onClick={() => void voice()?.setListen(true)}>On</button>
         </div>
       </div>
+      <div className="gear-row">
+        <span>🎤 Talk</span>
+        <div className="seg">
+          <button className={`seg-btn ${mode === 'push' ? 'active' : ''}`} onClick={() => voice()?.setMode('push')}>Hold to talk</button>
+          <button className={`seg-btn ${mode === 'open' ? 'active' : ''}`} onClick={() => voice()?.setMode('open')}>Tap on / off</button>
+        </div>
+      </div>
+      <small className="muted">
+        {touch ? 'Use the 🎤 and 🎧 buttons on the left of the screen.' : `Keys: ${keyLabel(keys.talk)} talk · ${keyLabel(keys.listen)} listen.`}{' '}
+        {mode === 'push' ? 'Hold 🎤 while you speak.' : 'Tap 🎤 to open / close your mic.'}
+      </small>
       {on && (
-        <>
-          <div className="gear-row sub">
-            <span>Mic</span>
-            <div className="seg">
-              <button className={`seg-btn ${mode === 'push' ? 'active' : ''}`} onClick={() => voice()?.setMode('push')}>{touch ? 'Hold 🎤' : 'Hold T'}</button>
-              <button className={`seg-btn ${mode === 'open' ? 'active' : ''}`} onClick={() => voice()?.setMode('open')}>Always on</button>
-            </div>
+        <div className="gear-row sub">
+          <span>Hear</span>
+          <div className="seg">
+            <button className={`seg-btn ${prox ? 'active' : ''}`} onClick={() => voice()?.setProximity(true)}>Nearby louder</button>
+            <button className={`seg-btn ${!prox ? 'active' : ''}`} onClick={() => voice()?.setProximity(false)}>Everyone</button>
           </div>
-          <div className="gear-row sub">
-            <span>Hear</span>
-            <div className="seg">
-              <button className={`seg-btn ${prox ? 'active' : ''}`} onClick={() => voice()?.setProximity(true)}>Nearby louder</button>
-              <button className={`seg-btn ${!prox ? 'active' : ''}`} onClick={() => voice()?.setProximity(false)}>Everyone</button>
-            </div>
-          </div>
-          {err && <small className="voice-err">{err}</small>}
-          <div className="voice-list">
-            {players.filter((p) => peers.includes(p.id)).map((p) => (
-              <div key={p.id} className={`voice-row ${speaking.includes(p.id) ? 'speaking' : ''}`}>
-                <span className="dot" style={{ background: p.color }} />
-                <span className="vname">{p.name}</span>
-                <button className="btn small" onClick={() => voice()?.toggleMute(p.id)}>{muted.includes(p.id) ? '🔇 Unmute' : '🔊 Mute'}</button>
-              </div>
-            ))}
-            {!peers.length && <small className="muted">No one else has voice on yet — ask friends to turn it on in ⚙️.</small>}
-          </div>
-        </>
+        </div>
       )}
-      {!on && <small className="muted">Talk to the players in this room. Off by default; only people in your room can hear you.</small>}
+      {err && <small className="voice-err">{err}</small>}
+      {on && (
+        <div className="voice-list">
+          {players.filter((p) => peers.includes(p.id)).map((p) => (
+            <div key={p.id} className={`voice-row ${speaking.includes(p.id) ? 'speaking' : ''}`}>
+              <span className="dot" style={{ background: p.color }} />
+              <span className="vname">{p.name}{deaf.includes(p.id) ? ' · 🔕 not listening' : ''}</span>
+              <button className="btn small" onClick={() => voice()?.toggleMute(p.id)}>{muted.includes(p.id) ? '🔇 Unmute' : '🔊 Mute'}</button>
+            </div>
+          ))}
+          {!peers.length && <small className="muted">No one else is in voice yet — ask friends to tap 🎧 or 🎤.</small>}
+        </div>
+      )}
+      {micReady && <button className="btn small" onClick={() => voice()?.releaseMic()}>🎙️ Stop using the microphone</button>}
+      {on && <button className="btn small" onClick={() => voice()?.disable()}>Leave voice chat</button>}
+      {!on && <small className="muted">Only people in this room can hear you. Your mic is used only while you talk.</small>}
     </div>
   );
 }
 
-/** On-screen voice: who is talking, your mic state, and a hold-to-talk 🎤 button on touch screens. */
+/**
+ * Voice controls on screen: 🎧 listen (tap on / off) and 🎤 talk (hold, or tap to toggle in open-mic mode),
+ * plus who is speaking right now.
+ */
 function VoiceHud() {
-  const on = usePvpStore((s) => s.voiceOn);
+  const listen = usePvpStore((s) => s.voiceListen);
+  const micOn = usePvpStore((s) => s.voiceMicOn);
   const mode = usePvpStore((s) => s.voiceMode);
   const talking = usePvpStore((s) => s.voiceTalking);
   const speaking = usePvpStore((s) => s.voiceSpeaking);
   const players = usePvpStore((s) => s.players);
   const selfId = usePvpStore((s) => s.selfId);
+  const keys = useSettingsStore((s) => s.controls.keys);
   const touch = !!Game.current?.input.touch.active;
-  if (!on) return null;
-  const others = players.filter((p) => p.id !== selfId && speaking.includes(p.id));
+  const voice = () => Game.current?.pvp?.voice;
+  const others = players.filter((p) => p.id !== selfId && speaking.includes(p.id)).slice(0, 4);
   const hold = (v: boolean) => (e: React.PointerEvent) => {
     e.stopPropagation();
     if (v) (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-    Game.current?.pvp?.voice.setPush(v);
+    voice()?.setPush('button', v);
   };
+  const talkProps = mode === 'push'
+    ? { onPointerDown: hold(true), onPointerUp: hold(false), onPointerCancel: hold(false), onLostPointerCapture: hold(false) }
+    : { onPointerDown: (e: React.PointerEvent) => { e.stopPropagation(); void voice()?.toggleTalk(); } };
+  const talkLabel = talking ? 'Talking' : mode === 'push' ? 'Hold to talk' : micOn ? 'Mic on' : 'Mic off';
   return (
-    <>
-      <div className="voice-hud">
-        <span className={`voice-me ${talking ? 'live' : ''}`}>{talking ? '🎙️ Talking' : mode === 'push' ? (touch ? '🎤 Hold to talk' : '🎤 Hold T to talk') : '🎙️ Mic on'}</span>
-        {others.map((p) => (
-          <span key={p.id} className="voice-chip" style={{ borderColor: p.color }}>🔊 {p.name}</span>
-        ))}
-      </div>
-      {touch && mode === 'push' && (
-        <button className={`talk-btn ${talking ? 'live' : ''}`} aria-label="Hold to talk" onPointerDown={hold(true)} onPointerUp={hold(false)} onPointerCancel={hold(false)} onLostPointerCapture={hold(false)}>
-          🎤
-        </button>
+    <div className="voice-dock" onPointerDown={(e) => e.stopPropagation()}>
+      {others.length > 0 && (
+        <div className="voice-speakers">
+          {others.map((p) => (
+            <span key={p.id} className="voice-chip" style={{ borderColor: p.color }}>🔊 {p.name}</span>
+          ))}
+        </div>
       )}
-    </>
+      <div className="voice-btns">
+        <button
+          className={`vbtn listen ${listen ? 'on' : 'off'}`}
+          aria-label={listen ? 'Stop listening to voice chat' : 'Listen to voice chat'}
+          aria-pressed={listen}
+          title={`Listen to the other players (${keyLabel(keys.listen)})`}
+          onPointerDown={(e) => { e.stopPropagation(); void voice()?.toggleListen(); }}
+        >
+          <span className="vicon">{listen ? '🎧' : '🔕'}</span>
+          <small>{listen ? 'Listening' : 'Listen'}{!touch && <kbd>{keyLabel(keys.listen)}</kbd>}</small>
+        </button>
+        <button
+          className={`vbtn talk ${talking ? 'live' : micOn ? 'on' : ''}`}
+          aria-label={mode === 'push' ? 'Hold to talk' : micOn ? 'Turn microphone off' : 'Turn microphone on'}
+          aria-pressed={talking}
+          title={`${mode === 'push' ? 'Hold to talk' : 'Tap to turn your mic on / off'} (${keyLabel(keys.talk)})`}
+          {...talkProps}
+        >
+          <span className="vicon">{talking || micOn ? '🎙️' : '🎤'}</span>
+          <small>{talkLabel}{!touch && <kbd>{keyLabel(keys.talk)}</kbd>}</small>
+        </button>
+      </div>
+    </div>
   );
 }

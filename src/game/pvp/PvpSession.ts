@@ -7,7 +7,7 @@ import { useGameStore } from '../../stores/gameStore';
 import { useInventoryStore } from '../../stores/inventoryStore';
 import { usePvpStore, type PvpPlayerInfo, type PvpSettings } from '../../stores/pvpStore';
 import { animateExplorer, buildExplorer, dressExplorer, dressFromItems, type Rig } from '../rendering/Models';
-import { makeStack } from '../systems/InventoryLogic';
+import { makeStack, type ItemStack } from '../systems/InventoryLogic';
 import type { Game } from '../Game';
 
 /** PvP hits hit harder than creature fights so duels stay short and punchy. */
@@ -16,6 +16,9 @@ const SEND_HZ = 12;
 const INTERP_DELAY = 110; // ms behind real time: smooth movement from 12 Hz updates
 const RESPAWN_SECONDS = 5;
 const MAX_PLAYERS = 8;
+/** Loot entries in one "loot" message: [id, item, count, durability (-1 = none), x, y, z, vx, vz]. */
+type LootEntry = [string, string, number, number, number, number, number, number, number];
+const MAX_LOOT = 60;
 
 interface Snap {
   t: number;
@@ -24,6 +27,8 @@ interface Snap {
   z: number;
   yaw: number;
   pitch: number;
+  /** Body yaw: where their character faces (walk direction), can differ from where they look. */
+  by: number;
   m: number;
   g: boolean;
 }
@@ -35,6 +40,7 @@ class RemotePlayer {
   readonly pos = new THREE.Vector3();
   yaw = 0;
   pitch = 0;
+  bodyYaw = 0;
   moving = 0;
   grounded = true;
   hp = 100;
@@ -65,6 +71,7 @@ class RemotePlayer {
       this.hasPos = true;
       this.pos.set(s.x, s.y, s.z);
       this.yaw = s.yaw;
+      this.bodyYaw = s.by;
     }
   }
 
@@ -96,6 +103,9 @@ class RemotePlayer {
       while (dy > Math.PI) dy -= Math.PI * 2;
       while (dy < -Math.PI) dy += Math.PI * 2;
       this.yaw += dy * Math.min(1, dt * 14);
+      let db = c.by - this.bodyYaw;
+      db = Math.atan2(Math.sin(db), Math.cos(db));
+      this.bodyYaw += db * Math.min(1, dt * 14);
       this.pitch += (c.pitch - this.pitch) * Math.min(1, dt * 14);
       this.moving = c.m;
       this.grounded = c.g;
@@ -105,7 +115,7 @@ class RemotePlayer {
     const r = this.rig.root;
     r.visible = this.hasPos && !this.dead;
     r.position.copy(this.pos);
-    r.rotation.y = this.yaw + Math.PI;
+    r.rotation.y = this.bodyYaw + Math.PI;
     animateExplorer(this.rig, {
       moving: this.moving, time: time + this.id.length, action: 0, grounded: this.grounded, swimming: false,
       swing: this.swing > 0 ? 1 - this.swing : 0, swingKind: this.swingKind, look: -this.pitch,
@@ -182,7 +192,7 @@ export class PvpSession {
   readonly net: NetSession;
   readonly group = new THREE.Group();
   readonly remotes = new Map<string, RemotePlayer>();
-  /** Free peer-to-peer voice chat (off until the player turns it on in ⚙️). */
+  /** Free peer-to-peer voice chat: separate 🎧 listen and 🎤 talk controls (both off until the player taps them). */
   readonly voice: VoiceChat;
   settings: PvpSettings;
   private players = new Map<string, PvpPlayerInfo>();
@@ -206,6 +216,9 @@ export class PvpSession {
   private ray = new THREE.Ray();
   private box = new THREE.Box3();
   private hitP = new THREE.Vector3();
+  /** Host: shared loot still lying on the ground (id → when it dropped). First to ask gets it. */
+  private lootAlive = new Map<string, number>();
+  private lootSeq = 0;
 
   constructor(private game: Game) {
     const net = pvpNet.current;
@@ -228,6 +241,7 @@ export class PvpSession {
     game.world.onSet = (x, y, z, id, meta) => {
       if (this.settings.building) this.outEdits.push([x, y, z, id | (meta << 8)]);
     };
+    game.drops.onNetPickup = (lid) => this.requestLoot(lid);
     net.onPeerLeave = (id) => this.dropPlayer(id);
     net.onClosed = (reason) => this.connectionLost(reason);
     if (net.closedReason) setTimeout(() => this.connectionLost(net.closedReason!), 0);
@@ -254,6 +268,7 @@ export class PvpSession {
       this.game.clock.time = w.time;
     }
     this.net.attach((from, msg) => this.receive(from, msg));
+    this.voice.autoStart();
     useGameStore.getState().toast(this.isHost ? `Room ${this.net.code} is open — share the code with friends!` : 'Joined the match. Good luck!', 'quest', '⚔️');
   }
 
@@ -319,10 +334,14 @@ export class PvpSession {
 
   private updateVoice(dt: number): void {
     const v = this.voice;
+    const inp = this.game.input;
+    // keyboard: T = talk (hold, or tap to toggle in open-mic mode), H = listen on / off — not while a menu is open
+    if (useGameStore.getState().overlay === null) {
+      if (inp.wasPressed('listen')) void v.toggleListen();
+      if (v.mode === 'push') v.setPush('key', inp.isDown('talk'));
+      else if (inp.wasPressed('talk')) void v.toggleTalk();
+    } else v.setPush('key', false);
     if (!v.on) return;
-    // push-to-talk: hold T (touch: the 🎤 button); not while typing in a field
-    const typing = document.activeElement?.tagName === 'INPUT';
-    if (v.mode === 'push' && !this.game.input.touch.active) v.setPush(!typing && this.game.input.keyDown('KeyT'));
     const cam = this.game.camera;
     const f = cam.getWorldDirection(this.hitP);
     this.voicePos.clear();
@@ -459,6 +478,7 @@ export class PvpSession {
     const by = recent?.by ?? null;
     const how = recent?.how ?? cause;
     this.respawnIn = RESPAWN_SECONDS;
+    if (!this.together) this.dropLoot();
     this.game.player.syncHud();
     usePvpStore.getState().set({ respawnIn: RESPAWN_SECONDS, killedBy: by ? this.players.get(by)?.name ?? 'someone' : null });
     if (this.isHost) this.recordKill(this.selfId, by, how);
@@ -504,6 +524,18 @@ export class PvpSession {
           return this.voice.handleState(msg);
         case 'died':
           return this.recordKill(from, typeof msg.by === 'string' && this.players.has(msg.by) ? msg.by : null, String(msg.how ?? ''));
+        case 'loot': {
+          msg.id = from;
+          const items = this.cleanLoot(msg.items, from);
+          if (!items.length) return;
+          msg.items = items;
+          this.net.sendExcept(from, msg);
+          const now = performance.now();
+          for (const e of items) this.lootAlive.set(e[0], now);
+          return this.spawnLoot(from, items);
+        }
+        case 'ltake':
+          return this.grantLoot(String(msg.lid ?? ''), from);
       }
       return;
     }
@@ -543,6 +575,10 @@ export class PvpSession {
         return this.restartLocal();
       case 'full':
         return this.connectionLost('That match is full.');
+      case 'loot':
+        return this.spawnLoot(String(msg.id ?? ''), this.cleanLoot(msg.items, String(msg.id ?? '')));
+      case 'lgone':
+        return this.lootGone(String(msg.lid ?? ''), typeof msg.by === 'string' ? msg.by : null);
     }
   }
 
@@ -595,7 +631,9 @@ export class PvpSession {
       }
       const p = msg.p as number[];
       if (!Array.isArray(p) || p.length < 3 || !p.every(Number.isFinite)) return;
-      r.push({ t: performance.now(), x: p[0], y: p[1], z: p[2], yaw: Number(msg.yw) || 0, pitch: Number(msg.pt) || 0, m: Number(msg.m) || 0, g: !!msg.g });
+      const yaw = Number(msg.yw) || 0;
+      const by = Number(msg.by);
+      r.push({ t: performance.now(), x: p[0], y: p[1], z: p[2], yaw, pitch: Number(msg.pt) || 0, by: Number.isFinite(by) ? by : yaw, m: Number(msg.m) || 0, g: !!msg.g });
       const hp = Number(msg.hp);
       if (Number.isFinite(hp) && hp !== r.hp) {
         if (hp < r.hp) this.game.fx.health(`p:${id}`, hp / 100, r.pos.x, r.pos.y + 1.95, r.pos.z);
@@ -649,6 +687,102 @@ export class PvpSession {
     }
     if (done > 0 || before <= 0) this.lastHit = { by: attacker, at: performance.now(), how: String(msg.how ?? 'melee') };
     if (done > 0) useGameStore.setState({ hurtFlash: performance.now() });
+  }
+
+  // ---------------------------------------------------------------- loot (a defeated player's items)
+
+  /**
+   * You were taken down: everything you carry (hotbar, backpack, armor, shield) spills on the ground
+   * where you fell, for anyone to grab. You respawn with a fresh kit as usual.
+   */
+  private dropLoot(): void {
+    const inv = useInventoryStore.getState();
+    const snap = inv.snapshot();
+    const stacks: ItemStack[] = [];
+    for (const st of snap.slots) if (st && st.count > 0 && hasItem(st.item)) stacks.push({ ...st });
+    for (const st of Object.values(snap.equipment)) if (st && st.count > 0 && hasItem(st.item)) stacks.push({ ...st });
+    inv.load({ slots: [], equipment: {} as typeof snap.equipment, selected: snap.selected });
+    if (!stacks.length) return;
+    const p = this.game.player.position;
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    const items: LootEntry[] = stacks.slice(0, MAX_LOOT).map((st, i, all) => {
+      // spread in a ring so the pile is easy to see and walk through
+      const a = (i / all.length) * Math.PI * 2 + Math.random() * 0.4;
+      const sp = 1.2 + Math.random() * 1.4;
+      return [`${this.selfId}:${++this.lootSeq}`, st.item, st.count, st.durability ?? -1, r2(p.x), r2(p.y + 0.9), r2(p.z), r2(Math.cos(a) * sp), r2(Math.sin(a) * sp)];
+    });
+    if (this.isHost) {
+      const now = performance.now();
+      for (const e of items) this.lootAlive.set(e[0], now);
+    }
+    this.net.send({ t: 'loot', id: this.selfId, items });
+    this.spawnLoot(this.selfId, items);
+  }
+
+  /** Never trust the network: known items, sane counts and positions, ids from that player only. */
+  private cleanLoot(raw: unknown, from: string): LootEntry[] {
+    if (!Array.isArray(raw)) return [];
+    const out: LootEntry[] = [];
+    for (const e of raw.slice(0, MAX_LOOT)) {
+      if (!Array.isArray(e) || e.length !== 9) continue;
+      const [lid, item, count, dur, ...nums] = e as unknown[];
+      if (typeof lid !== 'string' || !lid.startsWith(`${from}:`) || lid.length > 80) continue;
+      if (typeof item !== 'string' || !hasItem(item)) continue;
+      const n = Number(count);
+      if (!Number.isInteger(n) || n < 1 || n > itemDef(item).maxStack) continue;
+      if (!nums.every((v) => typeof v === 'number' && Number.isFinite(v))) continue;
+      const d = Number(dur);
+      out.push([lid, item, n, Number.isFinite(d) ? d : -1, ...(nums as number[])] as LootEntry);
+    }
+    return out;
+  }
+
+  private spawnLoot(owner: string, items: LootEntry[]): void {
+    if (!items.length) return;
+    const drops = this.game.drops;
+    for (const [lid, item, count, dur, x, y, z, vx, vz] of items) {
+      const st: ItemStack = { item, count };
+      if (dur >= 0) st.durability = dur;
+      drops.spawnNet(lid, st, x, y, z, vx, vz);
+    }
+    const [, , , , x, y, z] = items[0];
+    this.game.particles.emit('sparkle', x, y, z, 18, [1, 0.85, 0.35], { speed: 2.5, size: 0.09, life: 0.9, up: 2 });
+    if (owner === this.selfId) {
+      useGameStore.getState().toast('Your gear dropped where you fell — anyone can grab it!', 'warn', '🎒');
+      return;
+    }
+    const me = this.game.player.position;
+    if (Math.hypot(me.x - x, me.z - z) < 48) {
+      const name = this.players.get(owner)?.name ?? 'Someone';
+      useGameStore.getState().toast(`${name}'s loot is on the ground — walk over it to pick it up!`, 'quest', '💰');
+    }
+  }
+
+  /** Walked onto shared loot: the host decides who gets it (first come, first served). */
+  private requestLoot(lid: string): void {
+    if (this.phase !== 'playing') return;
+    if (this.isHost) this.grantLoot(lid, this.selfId);
+    else this.net.send({ t: 'ltake', lid });
+  }
+
+  /** Host: give the loot to the first player who asked; everyone else removes it. */
+  private grantLoot(lid: string, by: string): void {
+    if (!lid) return;
+    if (!this.lootAlive.has(lid)) {
+      // already taken (or despawned): tell the asker so it disappears for them too
+      if (by !== this.selfId) this.net.send({ t: 'lgone', lid, by: null }, by);
+      else this.game.drops.removeNet(lid);
+      return;
+    }
+    this.lootAlive.delete(lid);
+    this.net.send({ t: 'lgone', lid, by });
+    this.lootGone(lid, by);
+  }
+
+  private lootGone(lid: string, by: string | null): void {
+    if (!lid) return;
+    if (by === this.selfId) this.game.drops.takeNet(lid);
+    else this.game.drops.removeNet(lid);
   }
 
   // ---------------------------------------------------------------- scores (host is the referee)
@@ -706,6 +840,8 @@ export class PvpSession {
   private restartLocal(): void {
     this.phase = 'playing';
     this.respawnIn = 0;
+    this.lootAlive.clear();
+    this.game.drops.clearNet();
     usePvpStore.getState().set({ phase: 'playing', winner: null, scoreboardOpen: false, feed: [], timeLeft: this.timeLeft });
     this.respawn();
     useGameStore.getState().toast('New round — fight!', 'quest', '⚔️');
@@ -768,7 +904,7 @@ export class PvpSession {
       this.swingCount++;
     }
     this.net.send({
-      t: 's', id: this.selfId, p: [r2(b.pos.x), r2(b.pos.y - (p.crouching ? 0.12 : 0)), r2(b.pos.z)], yw: r2(p.yaw), pt: r2(p.pitch), m: r2(Math.min(1, hs / 8)),
+      t: 's', id: this.selfId, p: [r2(b.pos.x), r2(b.pos.y - (p.crouching ? 0.12 : 0)), r2(b.pos.z)], yw: r2(p.yaw), by: r2(p.bodyYaw), pt: r2(p.pitch), m: r2(Math.min(1, hs / 8)),
       g: b.grounded, hp: Math.round((p.vitality / p.maxVitality) * 100), dead: p.dead, sw: this.swingCount, sk: p.swingKind, dr: this.dressKeys(), f: force ? 1 : 0,
     });
   }
@@ -807,6 +943,7 @@ export class PvpSession {
       this.clockTimer -= dt;
       if (this.clockTimer <= 0) {
         this.clockTimer = 2;
+        for (const [lid, at] of this.lootAlive) if (now - at > 200_000) this.lootAlive.delete(lid);
         this.net.send({ t: 'clock', time: g.clock.time, left: this.timeLeft });
       }
     }
@@ -828,6 +965,8 @@ export class PvpSession {
     if (this.disposed) return;
     this.disposed = true;
     this.game.world.onSet = null;
+    this.game.drops.onNetPickup = null;
+    this.game.drops.clearNet();
     this.voice.dispose();
     for (const r of this.remotes.values()) r.dispose(this.group);
     this.remotes.clear();

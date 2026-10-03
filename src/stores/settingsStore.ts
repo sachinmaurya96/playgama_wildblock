@@ -2,18 +2,57 @@ import { create } from 'zustand';
 
 export type Action =
   | 'forward' | 'back' | 'left' | 'right' | 'jump' | 'sprint' | 'crouch' | 'inventory' | 'interact' | 'camera'
-  | 'journal' | 'map' | 'drop' | 'hideHud';
+  | 'journal' | 'map' | 'drop' | 'hideHud' | 'options' | 'talk' | 'listen';
 
 export const ACTION_LABELS: Record<Action, string> = {
   forward: 'Move forward', back: 'Move back', left: 'Strafe left', right: 'Strafe right', jump: 'Jump / swim up',
   sprint: 'Sprint', crouch: 'Crouch (edge-safe)', inventory: 'Backpack & crafting', interact: 'Interact / feed / pet',
   camera: 'Toggle camera', journal: 'Discovery journal', map: 'World map', drop: 'Drop item', hideHud: 'Hide HUD (photo)',
+  options: 'Quick options (PvP)', talk: 'Voice: talk (PvP)', listen: 'Voice: listen on / off (PvP)',
 };
 
 export const DEFAULT_KEYS: Record<Action, string> = {
   forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', sprint: 'ShiftLeft', crouch: 'ControlLeft',
   inventory: 'KeyE', interact: 'KeyF', camera: 'KeyV', journal: 'KeyJ', map: 'KeyM', drop: 'KeyQ', hideHud: 'F2',
+  options: 'KeyO', talk: 'KeyT', listen: 'KeyH',
 };
+
+/** Which device the gyro tuning is for ('auto' picks phone or tablet from the screen size). */
+export type GyroProfile = 'auto' | 'phone' | 'tablet';
+
+export interface GyroSettings {
+  /** Off by default: turn the phone / tablet to aim (adds to touch-drag looking). */
+  enabled: boolean;
+  profile: GyroProfile;
+  /** Camera degrees per degree the device turns (horizontal). */
+  sensitivity: number;
+  /** Vertical speed relative to horizontal. */
+  vertical: number;
+  /** 0 = raw & instant, 1 = very smooth (filters hand shake, adds a little lag). */
+  smoothing: number;
+  invertX: boolean;
+  invertY: boolean;
+  /** 'always', or only while holding attack / use (aiming a bow). */
+  when: 'always' | 'aiming';
+}
+
+/** Tuned starting points: phones are light (more hand shake → more smoothing); tablets are heavy (turned less → more sensitivity). */
+export const GYRO_PROFILES: Record<'phone' | 'tablet', Pick<GyroSettings, 'sensitivity' | 'vertical' | 'smoothing'> & { deadzone: number }> = {
+  phone: { sensitivity: 1.4, vertical: 0.8, smoothing: 0.45, deadzone: 2 },
+  tablet: { sensitivity: 2, vertical: 0.85, smoothing: 0.3, deadzone: 1.2 },
+};
+
+/** Tablet = the short side of the screen is at least 600 CSS px. */
+export function detectGyroDevice(): 'phone' | 'tablet' {
+  if (typeof window === 'undefined') return 'phone';
+  const short = Math.min(window.screen?.width ?? window.innerWidth, window.screen?.height ?? window.innerHeight);
+  return short >= 600 ? 'tablet' : 'phone';
+}
+
+export function defaultGyro(): GyroSettings {
+  const p = GYRO_PROFILES[detectGyroDevice()];
+  return { enabled: false, profile: 'auto', sensitivity: p.sensitivity, vertical: p.vertical, smoothing: p.smoothing, invertX: false, invertY: false, when: 'always' };
+}
 
 export type QualityPreset = 'low' | 'medium' | 'high' | 'auto' | 'custom';
 
@@ -30,8 +69,8 @@ export interface Settings {
     autoQuality: boolean;
   };
   audio: { master: number; music: number; sfx: number; ambient: number; creatures: number; ui: number };
-  controls: { sensitivity: number; invertY: boolean; keys: Record<Action, string>; touch: 'auto' | 'on' | 'off' };
-  gameplay: { cameraMode: 'first' | 'third'; tips: boolean; dayLengthMinutes: number; ghostPreview: boolean; showDebug: boolean; scarf: string };
+  controls: { sensitivity: number; invertY: boolean; keys: Record<Action, string>; touch: 'auto' | 'on' | 'off'; gyro: GyroSettings };
+  gameplay: { cameraMode: 'first' | 'third'; faceMovement: boolean; tips: boolean; dayLengthMinutes: number; ghostPreview: boolean; showDebug: boolean; scarf: string };
   accessibility: { reducedShake: boolean; highContrastOutline: boolean; uiScale: number; subtitles: boolean; reduceFlashing: boolean };
 }
 
@@ -65,8 +104,8 @@ export function defaultSettings(): Settings {
       clouds: true, autoQuality: true, ...(isTouch ? MOBILE_GRAPHICS : PRESETS[base]),
     },
     audio: { master: 0.8, music: 0.55, sfx: 0.8, ambient: 0.7, creatures: 0.8, ui: 0.6 },
-    controls: { sensitivity: 1, invertY: false, keys: { ...DEFAULT_KEYS }, touch: 'auto' },
-    gameplay: { cameraMode: 'first', tips: true, dayLengthMinutes: 24, ghostPreview: true, showDebug: false, scarf: 'ember' },
+    controls: { sensitivity: 1, invertY: false, keys: { ...DEFAULT_KEYS }, touch: 'auto', gyro: defaultGyro() },
+    gameplay: { cameraMode: 'first', faceMovement: true, tips: true, dayLengthMinutes: 24, ghostPreview: true, showDebug: false, scarf: 'ember' },
     accessibility: { reducedShake: false, highContrastOutline: false, uiScale: 1, subtitles: true, reduceFlashing: false },
   };
 }
@@ -87,7 +126,7 @@ function load(): Settings {
     return {
       graphics: { ...d.graphics, ...s.graphics },
       audio: { ...d.audio, ...s.audio },
-      controls: { ...d.controls, ...s.controls, keys: { ...d.controls.keys, ...s.controls?.keys } },
+      controls: { ...d.controls, ...s.controls, keys: { ...d.controls.keys, ...s.controls?.keys }, gyro: { ...d.controls.gyro, ...s.controls?.gyro } },
       gameplay: { ...d.gameplay, ...s.gameplay },
       accessibility: { ...d.accessibility, ...s.accessibility },
     };

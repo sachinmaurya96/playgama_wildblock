@@ -1,4 +1,5 @@
 import { useSettingsStore, type Action } from '../../stores/settingsStore';
+import { Gyro } from './Gyro';
 
 /**
  * Keyboard / mouse / pointer-lock / touch input. Engine systems poll this each
@@ -42,6 +43,8 @@ export class InputManager {
   /** Fired when pointer lock is lost while playing (→ pause menu). */
   onLockLost: (() => void) | null = null;
   onLockGained: (() => void) | null = null;
+  /** Optional gyro aiming on phones / tablets (Settings → Controls). */
+  readonly gyro = new Gyro();
 
   /** Virtual (touch) input written by the TouchControls component. */
   touch = {
@@ -162,6 +165,7 @@ export class InputManager {
     for (const [t, type, fn, opts] of this.listeners) t.removeEventListener(type, fn, opts);
     this.listeners = [];
     if (document.pointerLockElement) document.exitPointerLock();
+    this.gyro.stop();
     this.canvas = null;
   }
 

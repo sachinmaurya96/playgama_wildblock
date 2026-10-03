@@ -52,6 +52,10 @@ export class Player {
   readonly body: Body = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), halfW: PLAYER_HALF_W, height: PLAYER_HEIGHT, grounded: false };
   yaw = 0;
   pitch = 0;
+  /** Where the body faces (third person / other players see it): turns toward the movement direction. */
+  bodyYaw = 0;
+  /** Seconds left facing the camera after attacking / using / aiming. */
+  private faceAimTime = 0;
   crouching = false;
   sprinting = false;
   inWater = false;
@@ -113,6 +117,7 @@ export class Player {
   }
 
   teleport(x: number, y: number, z: number): void {
+    this.bodyYaw = this.yaw;
     this.body.pos.set(x, y, z);
     this.body.vel.set(0, 0, 0);
     this.fallPeak = y;
@@ -184,11 +189,20 @@ export class Player {
   update(dt: number, simulate: boolean): void {
     const input = this.game.input;
     const settings = useSettingsStore.getState();
+    input.gyro.configure(settings.controls.gyro, input.touch.active);
+    if (!simulate) input.gyro.take(); // never save up a turn while paused
     // ---- look (also works while paused for smooth camera return, but only with pointer lock)
     if (simulate) {
       const sens = 0.0022 * settings.controls.sensitivity;
       this.yaw -= input.lookX * sens;
       this.pitch -= input.lookY * sens * (settings.controls.invertY ? -1 : 1);
+      // gyro aiming (phones / tablets): turning the device turns the camera
+      const gyro = input.gyro.take();
+      const g = settings.controls.gyro;
+      if (g.enabled && (g.when === 'always' || input.touch.placeHeld || input.touch.breakHeld)) {
+        this.yaw += gyro.yaw;
+        this.pitch += gyro.pitch;
+      }
       this.pitch = Math.max(-1.55, Math.min(1.55, this.pitch));
       if (input.wasPressed('camera') && !this.creative) {
         this.cameraMode = this.cameraMode === 'first' ? 'third' : 'first';
@@ -365,15 +379,43 @@ export class Player {
     });
   }
 
+  /**
+   * Body direction: walks the way the joystick / keys push (like most third-person games),
+   * but squares up to the camera while attacking, using or aiming so hits go where you look.
+   */
+  private updateBodyYaw(dt: number, hs: number) {
+    const input = this.game.input;
+    const faceMove = useSettingsStore.getState().gameplay.faceMovement;
+    const aiming = this.swing > 0 || input.mouseLeft || input.mouseRight || input.touch.breakHeld || input.touch.placeHeld;
+    if (aiming) this.faceAimTime = 0.6;
+    else this.faceAimTime = Math.max(0, this.faceAimTime - dt);
+    let target = this.yaw;
+    const mv = input.moveVector();
+    if (faceMove && !this.seated && this.faceAimTime <= 0) {
+      if (hs > 0.6 && Math.hypot(mv.x, mv.y) > 0.15) target = Math.atan2(-this.body.vel.x, -this.body.vel.z);
+      else {
+        // standing still: keep facing where you last walked, unless the camera swings far round
+        let off = this.yaw - this.bodyYaw;
+        off = Math.atan2(Math.sin(off), Math.cos(off));
+        target = Math.abs(off) > 1.9 ? this.yaw : this.bodyYaw;
+      }
+    }
+    let d = target - this.bodyYaw;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    this.bodyYaw += d * Math.min(1, dt * (this.faceAimTime > 0 ? 18 : 10));
+    this.bodyYaw = Math.atan2(Math.sin(this.bodyYaw), Math.cos(this.bodyYaw));
+  }
+
   private updateAvatar(dt: number, hs: number) {
     const target = this.seated ? 1.05 : this.crouching ? EYE_CROUCH : EYE;
     this.eyeHeight += (target - this.eyeHeight) * Math.min(1, dt * 12);
     this.swing = Math.max(0, this.swing - dt * 3.2);
+    this.updateBodyYaw(dt, hs);
     const r = this.rig.root;
     r.visible = this.cameraMode === 'third';
     if (!r.visible) return;
     r.position.copy(this.body.pos);
-    r.rotation.y = this.yaw + Math.PI;
+    r.rotation.y = this.bodyYaw + Math.PI;
     r.scale.setScalar(1);
     const inv = useInventoryStore.getState();
     const eq = inv.equipment;

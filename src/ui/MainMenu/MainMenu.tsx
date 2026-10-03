@@ -74,7 +74,7 @@ export function MainMenu() {
         </div>
         {!persistent && <p className="storage-warn">Your browser is blocking storage here — worlds won’t be saved after you close the tab.</p>}
       </div>
-      <div className="version">v1.2.4 · made with three.js &amp; React</div>
+      <div className="version">v1.3.0 · made with three.js &amp; React</div>
     </div>
   );
 }

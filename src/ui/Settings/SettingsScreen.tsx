@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { audio } from '../../game/core/audio';
+import { Gyro, type GyroStatus } from '../../game/core/Gyro';
+import { Game } from '../../game/Game';
+import { touchEnabled } from '../../app/mobile';
 import { useGameStore } from '../../stores/gameStore';
-import { ACTION_LABELS, keyLabel, useSettingsStore, type Action, type QualityPreset } from '../../stores/settingsStore';
+import { ACTION_LABELS, detectGyroDevice, GYRO_PROFILES, keyLabel, useSettingsStore, type Action, type GyroProfile, type GyroSettings, type QualityPreset } from '../../stores/settingsStore';
 
 type Tab = 'graphics' | 'audio' | 'controls' | 'gameplay' | 'accessibility';
 
@@ -173,6 +176,7 @@ function Controls() {
           ))}
         </div>
       </Row>
+      <GyroSection />
       <div className="keybinds">
         {(Object.keys(ACTION_LABELS) as Action[]).map((a) => (
           <div key={a} className="keybind-row">
@@ -189,6 +193,89 @@ function Controls() {
   );
 }
 
+/** Gyro aiming for phones & tablets: off by default, tuned per device type. */
+function GyroSection() {
+  const g = useSettingsStore((s) => s.controls.gyro);
+  const touchMode = useSettingsStore((s) => s.controls.touch);
+  const update = useSettingsStore((s) => s.update);
+  const [err, setErr] = useState<string | null>(null);
+  const [status, setStatus] = useState<GyroStatus>(() => Game.current?.input.gyro.status ?? 'off');
+  const set = (p: Partial<GyroSettings>) => update('controls', { gyro: { ...useSettingsStore.getState().controls.gyro, ...p } });
+  const detected = detectGyroDevice();
+  const touch = touchEnabled(touchMode);
+  useEffect(() => {
+    const id = setInterval(() => setStatus(Game.current?.input.gyro.status ?? 'off'), 400);
+    return () => clearInterval(id);
+  }, []);
+  const enable = async (on: boolean) => {
+    setErr(null);
+    if (on && !(await Gyro.requestPermission())) {
+      setErr(Gyro.supported() ? 'Motion access was not allowed — allow "Motion & Orientation" for this site and try again.' : 'This device has no gyroscope.');
+      return;
+    }
+    set({ enabled: on });
+  };
+  const pickProfile = (profile: GyroProfile) => {
+    const p = GYRO_PROFILES[profile === 'auto' ? detected : profile];
+    set({ profile, sensitivity: p.sensitivity, vertical: p.vertical, smoothing: p.smoothing });
+  };
+  const statusText = !g.enabled
+    ? null
+    : !touch
+      ? 'Gyro works with touch controls (phones & tablets).'
+      : status === 'active'
+        ? '✅ Gyro is working — turn your device to aim.'
+        : status === 'unsupported'
+          ? '⚠️ No motion data from this device (no gyroscope, or blocked by the browser).'
+          : Game.current
+            ? '⏳ Waiting for motion data…'
+            : 'Starts when you are in a world.';
+  return (
+    <div className="gyro-section">
+      <Row label="🎯 Gyro aiming" hint="Phones & tablets: turn the device to aim. Works together with dragging to look.">
+        <Toggle value={g.enabled} onChange={(v) => void enable(v)} />
+      </Row>
+      {err && <p className="voice-err">{err}</p>}
+      {statusText && <p className="muted gyro-status">{statusText}</p>}
+      {g.enabled && (
+        <>
+          <Row label="Device" hint={`Tuned starting points. Auto picked: ${detected === 'tablet' ? 'tablet' : 'phone'}.`}>
+            <div className="seg">
+              {(['auto', 'phone', 'tablet'] as GyroProfile[]).map((p) => (
+                <button key={p} className={`seg-btn ${g.profile === p ? 'active' : ''}`} onClick={() => pickProfile(p)}>
+                  {p === 'auto' ? 'Auto' : p === 'phone' ? '📱 Phone' : '📲 Tablet'}
+                </button>
+              ))}
+            </div>
+          </Row>
+          <Row label="Gyro sensitivity" hint="How far the camera turns per turn of the device.">
+            <Slider value={g.sensitivity} min={0.3} max={4} step={0.05} onChange={(v) => set({ sensitivity: v })} format={(v) => `${v.toFixed(2)}×`} />
+          </Row>
+          <Row label="Vertical speed" hint="Up / down compared to left / right.">
+            <Slider value={g.vertical} min={0.3} max={1.5} step={0.05} onChange={(v) => set({ vertical: v })} format={(v) => `${Math.round(v * 100)}%`} />
+          </Row>
+          <Row label="Smoothing" hint="Higher = steadier aim (filters hand shake), lower = snappier.">
+            <Slider value={g.smoothing} min={0} max={1} step={0.05} onChange={(v) => set({ smoothing: v })} format={(v) => (v === 0 ? 'Off' : `${Math.round(v * 100)}%`)} />
+          </Row>
+          <Row label="Use gyro">
+            <div className="seg">
+              <button className={`seg-btn ${g.when === 'always' ? 'active' : ''}`} onClick={() => set({ when: 'always' })}>Always</button>
+              <button className={`seg-btn ${g.when === 'aiming' ? 'active' : ''}`} onClick={() => set({ when: 'aiming' })}>While attacking / aiming</button>
+            </div>
+          </Row>
+          <Row label="Invert left / right">
+            <Toggle value={g.invertX} onChange={(v) => set({ invertX: v })} />
+          </Row>
+          <Row label="Invert up / down">
+            <Toggle value={g.invertY} onChange={(v) => set({ invertY: v })} />
+          </Row>
+          <button className="btn small" onClick={() => pickProfile(g.profile)}>Reset gyro to device defaults</button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function Gameplay() {
   const gp = useSettingsStore((s) => s.gameplay);
   const update = useSettingsStore((s) => s.update);
@@ -202,6 +289,9 @@ function Gameplay() {
             </button>
           ))}
         </div>
+      </Row>
+      <Row label="Character faces where you move" hint="Third person: your explorer turns toward the joystick / keys direction (and faces your aim when attacking).">
+        <Toggle value={gp.faceMovement} onChange={(v) => update('gameplay', { faceMovement: v })} />
       </Row>
       <Row label="Day length" hint="Real minutes for a full day/night cycle.">
         <Slider value={gp.dayLengthMinutes} min={10} max={40} step={2} onChange={(v) => update('gameplay', { dayLengthMinutes: v })} format={(v) => `${v} min`} />

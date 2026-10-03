@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { itemDef } from '../../data/items';
-import { useInventoryStore } from '../../stores/inventoryStore';
+import { HOTBAR_SIZE, useInventoryStore } from '../../stores/inventoryStore';
 import { blockId } from '../world/BlockRegistry';
 import { blockObject } from '../rendering/BlockGeometry';
-import type { ItemStack } from '../systems/InventoryLogic';
+import { addStack, cloneSlots, type ItemStack } from '../systems/InventoryLogic';
 import type { Game } from '../Game';
 
 interface Drop {
@@ -15,10 +15,24 @@ interface Drop {
   obj: THREE.Object3D;
   phase: number;
   flying: boolean;
+  /** PvP loot: the same id on every player's screen. Picking it up needs the host's OK (no duplicates). */
+  netId?: string;
+  /** When we last asked the host for it (performance.now()). */
+  asked?: number;
 }
 
 const MAX_DROPS = 140;
 const DESPAWN = 300;
+/** PvP loot lies around for 3 minutes. */
+const NET_DESPAWN = 180;
+const NET_PICKUP_RANGE = 1.9;
+
+/** Would at least part of this stack fit in the backpack? */
+function roomFor(stack: ItemStack): boolean {
+  const inv = useInventoryStore.getState();
+  const slots = cloneSlots(inv.slots);
+  return addStack(slots, { ...stack }, 0, HOTBAR_SIZE + inv.packCapacity()) < stack.count;
+}
 
 /**
  * Floating item pickups: pop out of broken blocks, bob gently, drift toward the
@@ -29,6 +43,8 @@ export class DroppedItems {
   readonly group = new THREE.Group();
   private drops: Drop[] = [];
   private mergeTimer = 0;
+  /** PvP: walked onto shared loot — ask the host whether we get it. */
+  onNetPickup: ((netId: string) => void) | null = null;
 
   constructor(private game: Game) {
     this.group.name = 'drops';
@@ -40,7 +56,7 @@ export class DroppedItems {
 
   spawn(stack: ItemStack, x: number, y: number, z: number, burst = 1, delay = 0.35): void {
     if (stack.count <= 0) return;
-    if (this.drops.length >= MAX_DROPS) this.remove(this.drops[0]);
+    if (this.drops.length >= MAX_DROPS) this.remove(this.drops.find((d) => !d.netId) ?? this.drops[0]);
     const def = itemDef(stack.item);
     let obj: THREE.Object3D;
     if (def.placeBlock) {
@@ -60,6 +76,42 @@ export class DroppedItems {
     obj.position.copy(d.pos);
     this.group.add(obj);
     this.drops.push(d);
+  }
+
+  /** PvP loot from a defeated player: identical position & motion on every screen. */
+  spawnNet(netId: string, stack: ItemStack, x: number, y: number, z: number, vx: number, vz: number): void {
+    if (this.drops.some((d) => d.netId === netId)) return;
+    this.spawn(stack, x, y, z, 0, 0.8);
+    const d = this.drops[this.drops.length - 1];
+    d.netId = netId;
+    d.vel.set(vx, 4.2, vz);
+  }
+
+  /** Someone else picked it up (or it's gone): remove it here too. */
+  removeNet(netId: string): void {
+    const d = this.drops.find((x) => x.netId === netId);
+    if (d) this.remove(d);
+  }
+
+  /** The host gave us this loot: into the backpack (whatever doesn't fit pops back out as a normal drop). */
+  takeNet(netId: string): ItemStack | null {
+    const d = this.drops.find((x) => x.netId === netId);
+    if (!d) return null;
+    const stack = { ...d.stack };
+    this.remove(d);
+    const left = useInventoryStore.getState().addStackObj(stack);
+    const got = stack.count - left;
+    if (got > 0) {
+      this.game.audio.play('pickup', { pitch: 1 + Math.random() * 0.2 });
+      this.game.bus.emit('itemCollected', { item: stack.item, count: got });
+    }
+    if (left > 0) this.throwFromPlayer({ ...stack, count: left });
+    return stack;
+  }
+
+  /** New PvP round: all shared loot vanishes. */
+  clearNet(): void {
+    for (const d of this.drops.filter((x) => x.netId)) this.remove(d);
   }
 
   /** Drop from the player toward where they look (Q key / death). */
@@ -88,13 +140,21 @@ export class DroppedItems {
       const d = this.drops[i];
       d.age += dt;
       d.delay -= dt;
-      if (d.age > DESPAWN) {
+      if (d.age > (d.netId ? NET_DESPAWN : DESPAWN)) {
         this.remove(d);
         continue;
       }
       const dx = pp.x - d.pos.x, dy = pp.y + 0.8 - d.pos.y, dz = pp.z - d.pos.z;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      if (d.delay <= 0 && dist < 2.4 && !player.dead) {
+      if (d.netId) {
+        // shared loot: no magnet (two players may be reaching for it) — ask the host, at most every 1.2 s
+        const now = performance.now();
+        if (d.delay <= 0 && dist < NET_PICKUP_RANGE && !player.dead && now - (d.asked ?? 0) > 1200 && roomFor(d.stack)) {
+          d.asked = now;
+          this.onNetPickup?.(d.netId);
+        }
+      }
+      if (!d.netId && d.delay <= 0 && dist < 2.4 && !player.dead) {
         // magnet toward the player
         d.flying = true;
         const k = Math.min(1, dt * 10);
@@ -153,11 +213,11 @@ export class DroppedItems {
   private merge() {
     for (let i = 0; i < this.drops.length; i++) {
       const a = this.drops[i];
-      if (a.stack.durability !== undefined) continue;
+      if (a.stack.durability !== undefined || a.netId) continue;
       const max = itemDef(a.stack.item).maxStack;
       for (let j = this.drops.length - 1; j > i; j--) {
         const b = this.drops[j];
-        if (b.stack.item !== a.stack.item || b.stack.durability !== undefined) continue;
+        if (b.stack.item !== a.stack.item || b.stack.durability !== undefined || b.netId) continue;
         if (a.pos.distanceToSquared(b.pos) > 1.3 || a.stack.count + b.stack.count > max) continue;
         a.stack.count += b.stack.count;
         a.age = Math.min(a.age, b.age);
@@ -167,7 +227,7 @@ export class DroppedItems {
   }
 
   serialize(): { stack: ItemStack; x: number; y: number; z: number; age: number }[] {
-    return this.drops.map((d) => ({ stack: d.stack, x: d.pos.x, y: d.pos.y, z: d.pos.z, age: d.age }));
+    return this.drops.filter((d) => !d.netId).map((d) => ({ stack: d.stack, x: d.pos.x, y: d.pos.y, z: d.pos.z, age: d.age }));
   }
 
   load(list: { stack: ItemStack; x: number; y: number; z: number; age: number }[]): void {
