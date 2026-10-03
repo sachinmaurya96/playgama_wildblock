@@ -1,0 +1,367 @@
+/* WildBlocks — cozy explorer-notebook UI theme (original design) */
+:root {
+  --paper: #fbf5e8;
+  --paper-2: #f3e9d2;
+  --paper-3: #e8dabb;
+  --ink: #3a2c1e;
+  --ink-soft: #6d5a45;
+  --ink-faint: #9a8770;
+  --wood: #7a5230;
+  --wood-dark: #553820;
+  --wood-light: #b0804a;
+  --forest: #3f6b3a;
+  --forest-dark: #2d4f2a;
+  --leaf: #7fae5a;
+  --ember: #d9573f;
+  --gold: #e0b23d;
+  --sky: #8fc3e8;
+  --danger: #c0443a;
+  --shadow: 0 10px 30px rgba(40, 25, 10, 0.35);
+  --radius: 16px;
+  --radius-sm: 10px;
+  --font: 'Nunito', 'Trebuchet MS', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-title: 'Trebuchet MS', 'Nunito', 'Segoe UI', system-ui, sans-serif;
+  --ui-scale: 1;
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #1d2a22;
+  color: var(--ink);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  overscroll-behavior: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Scrollable panels may pan, but never zoom (no double-tap / pinch zoom anywhere). */
+* {
+  touch-action: pan-x pan-y;
+  -webkit-tap-highlight-color: transparent;
+}
+canvas,
+.canvas-wrap,
+.touch-layer,
+.touch-layer * {
+  touch-action: none;
+}
+img,
+svg {
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+}
+
+/* ---------------------------------------------------------------- rotate-to-landscape card (phones & tablets) */
+.rotate-hint {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: radial-gradient(circle at 50% 40%, #35553d 0%, #1d2a22 75%);
+  color: #fff6e0;
+  text-align: center;
+}
+.rotate-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 320px;
+}
+.rotate-card b { font-size: 1.35em; }
+.rotate-card small { opacity: 0.85; font-weight: 700; line-height: 1.4; }
+.rotate-card .btn { margin-top: 8px; }
+.rotate-phone {
+  width: 54px;
+  height: 92px;
+  border: 4px solid #fff6e0;
+  border-radius: 12px;
+  position: relative;
+  margin-bottom: 14px;
+  animation: rotatePhone 2.4s ease-in-out infinite;
+}
+.rotate-phone span {
+  position: absolute;
+  left: 50%;
+  bottom: 5px;
+  width: 10px;
+  height: 4px;
+  margin-left: -5px;
+  border-radius: 2px;
+  background: #fff6e0;
+}
+@keyframes rotatePhone {
+  0%, 20% { transform: rotate(0deg); }
+  55%, 85% { transform: rotate(-90deg); }
+  100% { transform: rotate(0deg); }
+}
+
+button {
+  font-family: inherit;
+  color: inherit;
+}
+
+input,
+select {
+  font-family: inherit;
+  user-select: text;
+}
+
+.app {
+  position: fixed;
+  inset: 0;
+}
+
+.canvas-wrap {
+  position: absolute;
+  inset: 0;
+  background: #1d2a22;
+}
+
+.ui-root {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-size: calc(15px * var(--ui-scale));
+}
+
+.ui-root > * {
+  pointer-events: auto;
+}
+
+/* ---------------------------------------------------------------- buttons */
+.btn {
+  appearance: none;
+  border: 2px solid var(--wood-dark);
+  background: linear-gradient(180deg, #fffaf0 0%, var(--paper-2) 100%);
+  color: var(--ink);
+  font-weight: 800;
+  font-size: 1em;
+  padding: 0.7em 1.4em;
+  border-radius: 999px;
+  box-shadow: 0 3px 0 var(--wood-dark), 0 6px 14px rgba(40, 25, 10, 0.25);
+  cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, background 0.15s ease;
+  letter-spacing: 0.01em;
+  min-height: 44px;
+}
+
+.btn:hover {
+  background: linear-gradient(180deg, #ffffff 0%, #f7eed8 100%);
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--wood-dark), 0 3px 8px rgba(40, 25, 10, 0.25);
+}
+
+.btn:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.btn.primary {
+  background: linear-gradient(180deg, #6f9d58 0%, var(--forest) 100%);
+  color: #fffbef;
+  border-color: var(--forest-dark);
+  box-shadow: 0 3px 0 var(--forest-dark), 0 6px 14px rgba(20, 40, 15, 0.35);
+}
+
+.btn.primary:hover {
+  background: linear-gradient(180deg, #7fae66 0%, #4a7a44 100%);
+}
+
+.btn.danger {
+  background: linear-gradient(180deg, #e0735f 0%, var(--danger) 100%);
+  color: #fff;
+  border-color: #7a2a22;
+  box-shadow: 0 3px 0 #7a2a22, 0 6px 14px rgba(60, 20, 10, 0.35);
+}
+
+.btn.small {
+  padding: 0.35em 0.9em;
+  font-size: 0.85em;
+  min-height: 34px;
+}
+
+.btn.ghost {
+  background: rgba(251, 245, 232, 0.55);
+  box-shadow: none;
+  border-color: transparent;
+  color: var(--ink-soft);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+/* ---------------------------------------------------------------- panels */
+.panel {
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(255, 255, 255, 0.55), transparent 60%),
+    linear-gradient(180deg, var(--paper) 0%, var(--paper-2) 100%);
+  border: 3px solid var(--wood);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow), inset 0 0 0 3px rgba(255, 255, 255, 0.5);
+  color: var(--ink);
+  position: relative;
+}
+
+.panel::before {
+  /* stitched notebook edge */
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border: 1.5px dashed rgba(122, 82, 48, 0.28);
+  border-radius: calc(var(--radius) - 6px);
+  pointer-events: none;
+}
+
+.panel-title {
+  font-family: var(--font-title);
+  font-weight: 900;
+  font-size: 1.5em;
+  color: var(--wood-dark);
+  margin: 0;
+  letter-spacing: 0.01em;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  /* always above the screen that opened it (menu panels use z-index 2, the HUD 2) */
+  z-index: 20;
+  background: radial-gradient(ellipse at center, rgba(20, 25, 15, 0.35), rgba(10, 12, 8, 0.65));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(16px, var(--safe-t)) max(16px, var(--safe-r)) max(16px, var(--safe-b)) max(16px, var(--safe-l));
+  animation: fadeIn 0.18s ease;
+}
+
+.close-x {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 2px solid var(--wood);
+  background: var(--paper);
+  font-size: 18px;
+  font-weight: 900;
+  cursor: pointer;
+  z-index: 2;
+  color: var(--wood-dark);
+}
+
+.close-x:hover {
+  background: #fff;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tab {
+  border: 2px solid var(--wood-light);
+  background: var(--paper-3);
+  color: var(--ink-soft);
+  font-weight: 800;
+  padding: 0.4em 0.9em;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.9em;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+}
+
+.tab.active {
+  background: var(--forest);
+  color: #fffbef;
+  border-color: var(--forest-dark);
+}
+
+.tab .badge {
+  background: var(--gold);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 0 0.45em;
+  font-size: 0.75em;
+}
+
+.muted {
+  color: var(--ink-faint);
+}
+
+.scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--wood-light) transparent;
+}
+
+.kbd {
+  display: inline-block;
+  min-width: 1.7em;
+  padding: 0.05em 0.45em;
+  border-radius: 6px;
+  border: 1.5px solid currentColor;
+  font-weight: 900;
+  font-size: 0.85em;
+  text-align: center;
+  line-height: 1.5;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes floaty {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,138 @@
+import { useState } from 'react';
+import { Game } from '../../game/Game';
+import { useGameStore } from '../../stores/gameStore';
+import { ACTION_LABELS, keyLabel, useSettingsStore, type Action } from '../../stores/settingsStore';
+import { useWorldStore } from '../../stores/worldStore';
+import { BUILD_CONTROLS } from '../../data/buildControls';
+import { useBuildStore } from '../../stores/buildStore';
+import { usePvpStore } from '../../stores/pvpStore';
+import { copyInvite } from '../HUD/PvpHud';
+
+export function PauseMenu() {
+  const world = useGameStore((s) => s.world);
+  const [controls, setControls] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const day = useWorldStore((s) => s.dayCount);
+  const resume = () => Game.current?.closeOverlay();
+
+  const quit = async () => {
+    setBusy(true);
+    await Game.current?.saveNow('quit');
+    useGameStore.setState({ overlay: null });
+    useGameStore.getState().setScreen('menu');
+  };
+
+  if (controls) return <ControlsCard onBack={() => setControls(false)} build={world?.mode === 'build'} />;
+
+  if (world?.mode === 'pvp') return <PvpPause resume={resume} onControls={() => setControls(true)} />;
+
+  if (world?.mode === 'build') return <BuildPause resume={resume} quit={quit} busy={busy} onControls={() => setControls(true)} />;
+
+  return (
+    <div className="modal-backdrop">
+      <div className="panel pause-panel">
+        <h2 className="panel-title">🍃 Paused</h2>
+        <p className="muted">{world?.name} · Day {day}</p>
+        <div className="menu-buttons">
+          <button className="btn primary" onClick={resume} autoFocus>Resume</button>
+          <button className="btn" onClick={() => useGameStore.getState().setOverlay('settings')}>Settings</button>
+          <button className="btn" onClick={() => setControls(true)}>Controls</button>
+          <button className="btn" onClick={() => Game.current?.openOverlay('journal')}>Journal</button>
+          <button className="btn" disabled={busy} onClick={quit}>{busy ? 'Saving…' : 'Save & Quit to Menu'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PvpPause({ resume, onControls }: { resume: () => void; onControls: () => void }) {
+  const code = usePvpStore((s) => s.code);
+  const online = usePvpStore((s) => s.online);
+  const together = usePvpStore((s) => s.settings.style === 'together');
+  const leave = () => {
+    useGameStore.setState({ overlay: null });
+    useGameStore.getState().setScreen('menu');
+  };
+  return (
+    <div className="modal-backdrop">
+      <div className="panel pause-panel">
+        <h2 className="panel-title">{together ? '🤝 Build Together' : '⚔️ PvP Battle'}</h2>
+        <p className="muted">The game keeps going while this menu is open!</p>
+        <div className="pvp-invite">
+          <span>Room code</span>
+          <b>{code}</b>
+          <small className="muted">{online ? 'Friends: PvP Mode → Join with code' : 'Open another tab of this browser → PvP → Join (This device)'}</small>
+        </div>
+        <div className="menu-buttons">
+          <button className="btn primary" onClick={resume} autoFocus>{together ? 'Back to the game' : 'Back to the fight'}</button>
+          <button className="btn" onClick={() => { const g = Game.current; if (g) { g.player.cameraMode = g.player.cameraMode === 'first' ? 'third' : 'first'; useSettingsStore.getState().update('gameplay', { cameraMode: g.player.cameraMode }); } resume(); }}>👁️ Switch camera (1st / 3rd person)</button>
+          <button className="btn" onClick={() => void copyInvite(code)}>📋 Copy invite link</button>
+          <button className="btn" onClick={() => { useGameStore.setState({ overlay: null }); usePvpStore.getState().set({ scoreboardOpen: true }); }}>🏆 Scoreboard</button>
+          <button className="btn" onClick={() => useGameStore.getState().setOverlay('settings')}>Settings</button>
+          <button className="btn" onClick={onControls}>Controls</button>
+          <button className="btn" onClick={leave}>Leave match</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BuildPause({ resume, quit, busy, onControls }: { resume: () => void; quit: () => void; busy: boolean; onControls: () => void }) {
+  const world = useGameStore((s) => s.world);
+  const tutorial = () => {
+    try {
+      localStorage.setItem('wildblocks.build.v1', JSON.stringify({ ...JSON.parse(localStorage.getItem('wildblocks.build.v1') ?? '{}'), tutorialSeen: false }));
+    } catch {
+      /* storage unavailable */
+    }
+    useGameStore.getState().toast('The tutorial will show again next time you open this project.', 'info', '🎓');
+  };
+  return (
+    <div className="modal-backdrop">
+      <div className="panel pause-panel">
+        <h2 className="panel-title">🏡 {world?.name}</h2>
+        <p className="muted">Build Home project · autosaves as you build</p>
+        <div className="menu-buttons">
+          <button className="btn build-home-btn" onClick={resume} autoFocus>Keep building</button>
+          <button className="btn" onClick={() => { useGameStore.getState().setOverlay(null); useBuildStore.getState().set({ walkthrough: false }); Game.current?.build?.setWalkthrough(true); Game.current?.input.requestLock(); }}>🚶 Walkthrough</button>
+          <button className="btn" onClick={() => { useGameStore.getState().setOverlay(null); Game.current?.build?.togglePhoto(); }}>📷 Photo mode</button>
+          <button className="btn" onClick={() => useGameStore.getState().setOverlay('settings')}>Settings</button>
+          <button className="btn" onClick={onControls}>Controls</button>
+          <button className="btn small ghost" onClick={tutorial}>Show the tutorial again</button>
+          <button className="btn" disabled={busy} onClick={quit}>{busy ? 'Saving…' : 'Save & Quit to Menu'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ControlsCard({ onBack, build = false }: { onBack: () => void; build?: boolean }) {
+  const keys = useSettingsStore((s) => s.controls.keys);
+  const rows: [string, string][] = build ? BUILD_CONTROLS : [
+    ...(['forward', 'back', 'left', 'right', 'jump', 'sprint', 'crouch'] as Action[]).map((a) => [keyLabel(keys[a]), ACTION_LABELS[a]] as [string, string]),
+    ['LMB (hold)', 'Break / chop / mine · attack'],
+    ['RMB', 'Place · use · eat · till · plant · shoot a bow (hold to repeat)'],
+    ['Tab (PvP)', 'Hold for the scoreboard'],
+    ...(['interact', 'inventory', 'journal', 'map', 'camera', 'drop', 'hideHud'] as Action[]).map((a) => [keyLabel(keys[a]), ACTION_LABELS[a]] as [string, string]),
+    ['1–9 / wheel', 'Select hotbar slot'],
+    ['Esc', 'Pause'],
+    ['F3', 'Debug info'],
+  ];
+  return (
+    <div className="modal-backdrop">
+      <div className="panel controls-panel">
+        <h2 className="panel-title">⌨️ Controls</h2>
+        <div className="controls-list scroll">
+          {rows.map(([k, v]) => (
+            <div key={v} className="control-row">
+              <span className="kbd">{k}</span>
+              <span>{v}</span>
+            </div>
+          ))}
+        </div>
+        <p className="muted">Rebind keys in Settings → Controls.</p>
+        <button className="btn primary" onClick={onBack}>Back</button>
+      </div>
+    </div>
+  );
+}

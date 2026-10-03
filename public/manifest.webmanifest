@@ -1,0 +1,10 @@
+{
+  "name": "WildBlocks — A Tiny Living World",
+  "short_name": "WildBlocks",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#1d2a22",
+  "theme_color": "#2f4a36",
+  "icons": [{ "src": "./favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

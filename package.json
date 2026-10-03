@@ -1,0 +1,39 @@
+{
+  "name": "wildblocks",
+  "private": true,
+  "version": "1.2.4",
+  "description": "WildBlocks — A Tiny Living World. A cozy browser voxel adventure sandbox.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "validate:data": "tsx scripts/validate-data.ts"
+  },
+  "dependencies": {
+    "@react-three/fiber": "^9.8.1",
+    "idb": "^8.0.3",
+    "peerjs": "^1.5.5",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "three": "^0.185.0",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/three": "^0.185.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "fake-indexeddb": "^6.2.5",
+    "tsx": "^4.20.0",
+    "typescript": "~6.0.2",
+    "vite": "^7.1.0",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}
