@@ -83,6 +83,7 @@ export function WorldSelect() {
       {confirm && (
         <div className="modal-backdrop">
           <div className="panel confirm-panel">
+            <button className="close-x" onClick={() => setConfirm(null)} aria-label="Keep it">✕</button>
             <h2 className="panel-title">Delete “{confirm.name}”?</h2>
             <p>This removes the world and everything you built in it. It cannot be undone.</p>
             <div className="menu-buttons row">

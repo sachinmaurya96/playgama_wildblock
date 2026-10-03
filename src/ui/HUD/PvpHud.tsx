@@ -145,7 +145,7 @@ export function Scoreboard() {
   return (
     <div className={`scoreboard-wrap ${ended ? 'ended' : ''}`} onPointerDown={(e) => e.stopPropagation()}>
       <div className="panel scoreboard">
-        {!ended && <button className="close-x" onClick={close} aria-label="Close">✕</button>}
+        <button className="close-x" onClick={close} aria-label="Close">✕</button>
         <h2 className="panel-title">{ended ? (winner ? `🏆 ${winner} wins!` : '🤝 It’s a draw!') : usePvpStore.getState().settings.style === 'together' ? '👥 Players' : '🏆 Scoreboard'}</h2>
         <table>
           <thead>
@@ -366,8 +366,10 @@ function GearPanel() {
           <button className={`seg-btn ${camera === 'third' ? 'active' : ''}`} onClick={() => setCamera('third')}>3rd person</button>
         </div>
       </div>
+      <QuickRespawn onDone={back} />
       {touch && <GyroRow />}
       <VoicePanel />
+      <LocationPanel onDone={back} />
       <button className="btn small" onClick={() => setHelp(!help)}>🎮 Controls</button>
       {help && (
         <div className="gear-help">
@@ -395,6 +397,109 @@ function GearPanel() {
       <button className="btn small" onClick={() => { close(); Game.current?.openOverlay('settings'); }}>⚙️ Settings (sound, graphics…)</button>
       <button className={`btn small ${confirmExit ? 'danger' : ''}`} onClick={exit}>{confirmExit ? 'Tap again to leave' : '🚪 Exit game'}</button>
       <button className="btn small primary" onClick={back}>Resume</button>
+    </div>
+  );
+}
+
+/** Ticks every half second while mounted (positions / cooldowns shown in the ⚙️ panel). */
+function useTick(ms = 500) {
+  const [, setN] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setN((n) => n + 1), ms);
+    return () => clearInterval(id);
+  }, [ms]);
+}
+
+/** 🆘 Always-available respawn: back on solid ground near the other players (keeps health & items). */
+function QuickRespawn({ onDone }: { onDone: () => void }) {
+  useTick();
+  const [msg, setMsg] = useState<string | null>(null);
+  const pvp = Game.current?.pvp;
+  const blocked = pvp?.moveBlocked() ?? null;
+  return (
+    <div className="quick-respawn">
+      <button
+        className="btn small danger"
+        disabled={!!blocked}
+        onClick={() => {
+          const why = Game.current?.pvp?.quickRespawn() ?? null;
+          if (why) setMsg(why);
+          else onDone();
+        }}
+      >
+        🆘 Quick respawn near players
+      </button>
+      {(blocked || msg) && <small className="muted">{blocked ?? msg}</small>}
+    </div>
+  );
+}
+
+/** Parse "x y z", "x, z", "x/y/z"… → numbers (2 = x z, 3 = x y z). */
+export function parseCoords(text: string): { x: number; y?: number; z: number } | null {
+  const n = (text.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+  if (n.length === 2) return { x: n[0], z: n[1] };
+  if (n.length === 3) return { x: n[0], y: n[1], z: n[2] };
+  return null;
+}
+
+/** 📍 Coordinates: yours (copy to share), every player's (tap Go to join them) and a box to teleport anywhere. */
+function LocationPanel({ onDone }: { onDone: () => void }) {
+  useTick();
+  const [text, setText] = useState('');
+  const [msg, setMsg] = useState<string | null>(null);
+  const pvp = Game.current?.pvp;
+  const spots = pvp?.playerSpots() ?? [];
+  const me = spots.find((p) => p.me);
+  const result = (why: string | null) => {
+    if (why) setMsg(why);
+    else {
+      setMsg(null);
+      setText('');
+      onDone();
+    }
+  };
+  const copy = async () => {
+    if (!me) return;
+    const t = `${me.x} ${me.y} ${me.z}`;
+    try {
+      await navigator.clipboard.writeText(t);
+      setMsg(`Copied ${t} — send it to a friend.`);
+    } catch {
+      setMsg(`Your coordinates: ${t}`);
+    }
+  };
+  return (
+    <div className="location-panel">
+      <div className="gear-row">
+        <span>📍 Location</span>
+        {me && (
+          <button className="coord-chip" onClick={() => void copy()} title="Copy your coordinates">
+            {me.x} {me.y} {me.z} 📋
+          </button>
+        )}
+      </div>
+      {spots.filter((p) => !p.me).map((p) => (
+        <div key={p.id} className="loc-row">
+          <span className="dot" style={{ background: p.color }} />
+          <span className="vname">{p.name}</span>
+          <small className="muted">{p.x} {p.y} {p.z} · {p.dist}m</small>
+          <button className="btn small" onClick={() => result(Game.current?.pvp?.teleportToPlayer(p.id) ?? null)}>Go</button>
+        </div>
+      ))}
+      {spots.length <= 1 && <small className="muted">Friends' coordinates show up here when they join.</small>}
+      <form
+        className="loc-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const c = parseCoords(text);
+          if (!c) return setMsg('Type coordinates like 120 64 -35 (or just 120 -35).');
+          result(Game.current?.pvp?.teleportTo(c.x, c.z, c.y) ?? null);
+        }}
+      >
+        <input className="search" inputMode="text" placeholder="x y z  (e.g. 120 64 -35)" value={text} onChange={(e) => setText(e.target.value)} aria-label="Coordinates to teleport to" />
+        <button type="submit" className="btn small primary">Teleport</button>
+      </form>
+      {msg && <small className="muted">{msg}</small>}
     </div>
   );
 }
@@ -484,8 +589,8 @@ function VoicePanel() {
         </div>
       )}
       {micReady && <button className="btn small" onClick={() => voice()?.releaseMic()}>🎙️ Stop using the microphone</button>}
-      {on && <button className="btn small" onClick={() => voice()?.disable()}>Leave voice chat</button>}
-      {!on && <small className="muted">Only people in this room can hear you. Your mic is used only while you talk.</small>}
+      {on && <button className="btn small" onClick={() => { voice()?.releaseMic(); void voice()?.setListen(false); }}>Leave voice chat</button>}
+      {!on && <small className="muted">Listening is off. Tap 🎧 to hear the room again. Only people in this room can hear you; your mic is used only while you talk.</small>}
     </div>
   );
 }
@@ -508,12 +613,17 @@ function VoiceHud() {
   const others = players.filter((p) => p.id !== selfId && speaking.includes(p.id)).slice(0, 4);
   const hold = (v: boolean) => (e: React.PointerEvent) => {
     e.stopPropagation();
-    if (v) (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     voice()?.setPush('button', v);
+    try {
+      if (v) (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    } catch {
+      /* pointer already gone: release still arrives via pointerup / cancel */
+    }
   };
+  // taps use click (a real "user gesture" on iPhone / iPad, unlike pointerdown) so audio is allowed to start
   const talkProps = mode === 'push'
-    ? { onPointerDown: hold(true), onPointerUp: hold(false), onPointerCancel: hold(false), onLostPointerCapture: hold(false) }
-    : { onPointerDown: (e: React.PointerEvent) => { e.stopPropagation(); void voice()?.toggleTalk(); } };
+    ? { onPointerDown: hold(true), onPointerUp: hold(false), onPointerCancel: hold(false), onLostPointerCapture: hold(false), onClick: () => voice()?.unlockAudio() }
+    : { onPointerDown: (e: React.PointerEvent) => e.stopPropagation(), onClick: () => void voice()?.toggleTalk() };
   const talkLabel = talking ? 'Talking' : mode === 'push' ? 'Hold to talk' : micOn ? 'Mic on' : 'Mic off';
   return (
     <div className="voice-dock" onPointerDown={(e) => e.stopPropagation()}>
@@ -530,7 +640,8 @@ function VoiceHud() {
           aria-label={listen ? 'Stop listening to voice chat' : 'Listen to voice chat'}
           aria-pressed={listen}
           title={`Listen to the other players (${keyLabel(keys.listen)})`}
-          onPointerDown={(e) => { e.stopPropagation(); void voice()?.toggleListen(); }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => void voice()?.toggleListen()}
         >
           <span className="vicon">{listen ? '🎧' : '🔕'}</span>
           <small>{listen ? 'Listening' : 'Listen'}{!touch && <kbd>{keyLabel(keys.listen)}</kbd>}</small>

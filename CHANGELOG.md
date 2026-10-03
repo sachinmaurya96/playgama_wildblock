@@ -2,6 +2,13 @@
 
 ## 1.3.0 — Loot drops, gyro aiming & separate talk / listen
 
+- **🎮 Play your own world with friends**: Settings (top) or the pause menu → "Play this world / home with friends" opens a PvP room (Battle or Build together) on the Survival world or Build Home you're in — same terrain, every block you changed and, for Build Home, your house and furniture (solid for everyone). Friends spawn around you. Your save isn't changed by the match.
+- **Voice works on iPhone / iPad**: the 🎧 / 🎤 buttons did nothing there (audio was started on touch-down, which iOS doesn't count as a tap, and the game waited for it forever). Taps now use click, audio wakes on the next tap anywhere, and voice links are rebuilt once when you first switch your mic on so Safari sends your voice.
+- **Listening is on by default** for everyone in a match (switch 🎧 off if you like — that choice is remembered). Talking stays optional.
+- **Gyro on iPhone / iPad**: Safari reports the rotation axes in a different order, which turned the camera the wrong way. Detected automatically, with a manual "Axis layout" switch in Settings → Controls.
+- **🆘 Quick respawn** is always in the PvP ⚙️ panel (not during a fight, 8 s cooldown).
+- **📍 Coordinates & teleport** in the PvP ⚙️ panel: your coordinates (tap to copy), every player's coordinates with a **Go** button, and a box to teleport to any `x y z` or `x z`.
+- **✕ close button on every popup**: pause menus, controls, lore, Build Home dialogs and pop-ups, delete-world confirm, end-of-match scoreboard.
 - **Character faces where you move**: in third person your explorer turns toward the joystick / WASD direction (walking left shows them walking left), and squares up to the camera while attacking, using or aiming. Other PvP players see your body direction too. Toggle: Settings → Gameplay.
 - **PvP loot drops**: when a player is taken down in a Battle match, everything they carried (hotbar, backpack, armor, shield) spills on the ground where they fell, on every player's screen. Walk over it to pick it up. The host decides who gets each item (first come, first served), so two players grabbing the same item can't duplicate it. The defeated player respawns with a fresh kit as before. Loot disappears after 3 minutes or when a new round starts. (Not in Build Together.)
 - **🎯 Gyro aiming (optional)** for phones & tablets: turn the device to aim, together with drag-to-look. Off by default. Settings → Controls has device profiles (Auto / 📱 Phone / 📲 Tablet), sensitivity, vertical speed, smoothing, invert left/right and up/down, "always" or "only while attacking / aiming", and a live "gyro is working" check. Asks for motion permission on iOS. Also a quick On/Off in the PvP ⚙️ panel.

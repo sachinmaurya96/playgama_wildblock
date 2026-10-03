@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { audio } from '../../game/core/audio';
-import { Gyro, type GyroStatus } from '../../game/core/Gyro';
+import { Gyro, isAppleMobile, type GyroStatus } from '../../game/core/Gyro';
 import { Game } from '../../game/Game';
 import { touchEnabled } from '../../app/mobile';
 import { useGameStore } from '../../stores/gameStore';
+import { PlayWithFriends } from './PlayWithFriends';
 import { ACTION_LABELS, detectGyroDevice, GYRO_PROFILES, keyLabel, useSettingsStore, type Action, type GyroProfile, type GyroSettings, type QualityPreset } from '../../stores/settingsStore';
 
 type Tab = 'graphics' | 'audio' | 'controls' | 'gameplay' | 'accessibility';
@@ -28,6 +29,7 @@ export function SettingsScreen({ inGame = false }: { inGame?: boolean }) {
           ))}
         </div>
         <div className="settings-body scroll">
+          {inGame && <PlayWithFriends />}
           {tab === 'graphics' && <Graphics />}
           {tab === 'audio' && <Audio />}
           {tab === 'controls' && <Controls />}
@@ -261,6 +263,15 @@ function GyroSection() {
             <div className="seg">
               <button className={`seg-btn ${g.when === 'always' ? 'active' : ''}`} onClick={() => set({ when: 'always' })}>Always</button>
               <button className={`seg-btn ${g.when === 'aiming' ? 'active' : ''}`} onClick={() => set({ when: 'aiming' })}>While attacking / aiming</button>
+            </div>
+          </Row>
+          <Row label="Axis layout" hint={`If turning left / right moves the camera up / down, switch this. Auto picked: ${isAppleMobile() ? 'iPhone / iPad' : 'standard'}.`}>
+            <div className="seg">
+              {(['auto', 'standard', 'apple'] as const).map((a) => (
+                <button key={a} className={`seg-btn ${g.axes === a ? 'active' : ''}`} onClick={() => set({ axes: a })}>
+                  {a === 'auto' ? 'Auto' : a === 'standard' ? 'Android' : 'iPhone / iPad'}
+                </button>
+              ))}
             </div>
           </Row>
           <Row label="Invert left / right">

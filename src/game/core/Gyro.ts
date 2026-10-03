@@ -106,8 +106,12 @@ export class Gyro {
     const angle = ((screenAngle() % 360) + 360) % 360;
     const a = angle * DEG;
     const sin = Math.sin(a), cos = Math.cos(a);
-    const yawRate = (r.beta ?? 0) * sin + (r.gamma ?? 0) * cos; // around the screen's vertical axis (deg/s)
-    const pitchRate = (r.beta ?? 0) * cos - (r.gamma ?? 0) * sin; // around the screen's horizontal axis
+    // rotation around the device's own x (across the screen) and y (up the screen) axes, deg/s
+    const apple = s.axes === 'apple' || (s.axes !== 'standard' && isAppleMobile());
+    const rx = (apple ? r.alpha : r.beta) ?? 0;
+    const ry = (apple ? r.beta : r.gamma) ?? 0;
+    const yawRate = rx * sin + ry * cos; // around the screen's vertical axis
+    const pitchRate = rx * cos - ry * sin; // around the screen's horizontal axis
     const prof = GYRO_PROFILES[s.profile === 'auto' ? detectGyroDevice() : s.profile];
     // soft dead zone: hand tremor below it fades out instead of cutting off abruptly
     const dz = prof.deadzone;
@@ -131,6 +135,12 @@ export class Gyro {
     this.yaw = this.pitch = 0;
     return out;
   }
+}
+
+/** iPhone / iPad (incl. iPads that report as a Mac): Safari's motion axes differ from the spec order. */
+export function isAppleMobile(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /iP(hone|ad|od)/.test(navigator.userAgent ?? '') || (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints ?? 0) > 1);
 }
 
 function screenAngle(): number {

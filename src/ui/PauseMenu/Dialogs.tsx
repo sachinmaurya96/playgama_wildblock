@@ -43,6 +43,7 @@ export function LoreDialog() {
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className="panel lore-panel">
+        <button className="close-x" onClick={close} aria-label="Close">✕</button>
         <div className="lore-glyphs">ᚹ ᛁ ᛚ ᛞ</div>
         <h2 className="panel-title">{lore.title}</h2>
         <p className="lore-text">“{lore.text}”</p>

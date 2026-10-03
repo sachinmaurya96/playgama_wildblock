@@ -132,6 +132,7 @@ function EnvButton() {
       <button className="btn small" title="Time of day & weather" onClick={() => setOpen(!open)}>{icon}{locked ? '🔒' : ''}</button>
       {open && (
         <div className="panel env-pop">
+          <button className="close-x small pop-x" onClick={() => setOpen(false)} aria-label="Close">✕</button>
           <EnvControls />
           <button className="btn small" onClick={() => setOpen(false)}>Done</button>
         </div>
@@ -229,6 +230,7 @@ function MatPicker({ label, value, list, onPick }: { label: string; value: strin
       </button>
       {open && (
         <div className="panel mat-pop scroll">
+          <button className="close-x small pop-x" onClick={() => setOpen(false)} aria-label="Close">✕</button>
           {[...new Set(list)].map((i) => (
             <button key={i} className={`swatch ${ARCH_MATERIALS[i].key === value ? 'active' : ''}`} style={{ background: swatchOf(i) }} title={ARCH_MATERIALS[i].name} onClick={() => { onPick(ARCH_MATERIALS[i].key); setOpen(false); }} />
           ))}

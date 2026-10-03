@@ -77,6 +77,24 @@ describe('gyro aiming', () => {
     expect(g.take().yaw).toBeCloseTo(DEG30, 1);
   });
 
+  it('reads iPhone / iPad axis order (alpha = x, beta = y)', () => {
+    angle = 90;
+    const g = gyro({ axes: 'apple' });
+    spin(0, 0); // nothing
+    listener?.({ rotationRate: { alpha: 0, beta: 0, gamma: 0 } });
+    g.take();
+    for (let i = 0; i < 30; i++) {
+      now += 1000 / 60;
+      listener?.({ rotationRate: { alpha: 60, beta: 0, gamma: 0 } }); // Safari: alpha is the x axis
+    }
+    expect(g.take().yaw).toBeCloseTo(DEG30, 1);
+    for (let i = 0; i < 30; i++) {
+      now += 1000 / 60;
+      listener?.({ rotationRate: { alpha: 0, beta: -60, gamma: 0 } }); // Safari: beta is the y axis
+    }
+    expect(g.take().pitch).toBeCloseTo(DEG30, 1);
+  });
+
   it('applies sensitivity, vertical speed and invert options', () => {
     angle = 90;
     const g = gyro({ sensitivity: 2, vertical: 0.5, invertX: true });

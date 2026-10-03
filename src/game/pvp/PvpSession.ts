@@ -8,6 +8,12 @@ import { useInventoryStore } from '../../stores/inventoryStore';
 import { usePvpStore, type PvpPlayerInfo, type PvpSettings } from '../../stores/pvpStore';
 import { animateExplorer, buildExplorer, dressExplorer, dressFromItems, type Rig } from '../rendering/Models';
 import { makeStack, type ItemStack } from '../systems/InventoryLogic';
+import { BuildObjects } from '../build/BuildObjects';
+import { objectMaterials } from '../build/ObjectGeometry';
+import type { BuildObjectSave } from '../../persistence/types';
+import { CHUNK_SIZE } from '../world/constants';
+import { ckeyX, ckeyZ } from '../world/World';
+import { indexToLocal } from '../world/coordinates';
 import type { Game } from '../Game';
 
 /** PvP hits hit harder than creature fights so duels stay short and punchy. */
@@ -211,6 +217,10 @@ export class PvpSession {
   private stuckTime = 0;
   private rescueCooldown = 0;
   private emergency = false;
+  /** Quick respawn / teleport cooldown (seconds). */
+  private moveCooldown = 0;
+  /** After a teleport: once the terrain there has loaded, make sure we aren't inside a wall. */
+  private pendingSafe = false;
   center = { x: 0, y: 64, z: 0 };
   private disposed = false;
   private ray = new THREE.Ray();
@@ -219,6 +229,13 @@ export class PvpSession {
   /** Host: shared loot still lying on the ground (id → when it dropped). First to ask gets it. */
   private lootAlive = new Map<string, number>();
   private lootSeq = 0;
+  /** Host of an opened world: its block changes before the match ([x, y, z, id | meta << 8]), sent to each joiner. */
+  private baseEdits: [number, number, number, number][] = [];
+  /** An opened Build Home's objects (walls, furniture…), drawn and solid for everyone. */
+  private objects: BuildObjects | null = null;
+  private objectList: Omit<BuildObjectSave, 'id'>[] = [];
+  private relightTimer = 0;
+  private relightsLeft = 0;
 
   constructor(private game: Game) {
     const net = pvpNet.current;
@@ -242,6 +259,17 @@ export class PvpSession {
       if (this.settings.building) this.outEdits.push([x, y, z, id | (meta << 8)]);
     };
     game.drops.onNetPickup = (lid) => this.requestLoot(lid);
+    if (net.isHost && this.settings.source) {
+      // the world's own changes, captured before the match edits anything
+      for (const [k, m] of game.world.mods) {
+        const cx = ckeyX(k) * CHUNK_SIZE, cz = ckeyZ(k) * CHUNK_SIZE;
+        for (const [idx, v] of m) {
+          const [lx, ly, lz] = indexToLocal(idx);
+          this.baseEdits.push([cx + lx, ly, cz + lz, v]);
+        }
+      }
+      this.addObjects(net.sourceObjects);
+    }
     net.onPeerLeave = (id) => this.dropPlayer(id);
     net.onClosed = (reason) => this.connectionLost(reason);
     if (net.closedReason) setTimeout(() => this.connectionLost(net.closedReason!), 0);
@@ -288,7 +316,9 @@ export class PvpSession {
   randomSpawn(): { x: number; y: number; z: number } {
     const flat = !!this.game.world.plotSampler;
     for (let i = 0; i < 40; i++) {
-      const a = Math.random() * Math.PI * 2, r = 6 + Math.random() * (flat ? 44 : 34);
+      // an opened world: stay close to the host's spot (their base / house); arenas spread out for fights
+      const spread = this.settings.source ? 12 : flat ? 44 : 34;
+      const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * spread;
       const x = Math.floor(this.center.x + Math.cos(a) * r), z = Math.floor(this.center.z + Math.sin(a) * r);
       const col = this.groundAt(x, z);
       if (col.wet) continue;
@@ -355,6 +385,11 @@ export class PvpSession {
   private updateStuck(dt: number): void {
     const p = this.game.player;
     this.rescueCooldown = Math.max(0, this.rescueCooldown - dt);
+    this.moveCooldown = Math.max(0, this.moveCooldown - dt);
+    if (this.pendingSafe && !p.waitingForGround) {
+      this.pendingSafe = false;
+      this.game.ensureSafePosition();
+    }
     let stuck = false;
     if (!p.dead && this.phase === 'playing' && this.respawnIn <= 0) {
       const pos = p.position;
@@ -372,9 +407,74 @@ export class PvpSession {
     if (show && this.game.input.keyPressed('KeyR')) this.emergencyRespawn();
   }
 
+  /** Why a quick respawn / teleport can't happen right now (null = it can). */
+  moveBlocked(): string | null {
+    const p = this.game.player;
+    if (this.phase !== 'playing') return 'The match is over.';
+    if (p.dead || this.respawnIn > 0) return 'You are respawning…';
+    if (this.lastHit && performance.now() - this.lastHit.at < 5000) return 'Not in the middle of a fight — wait a few seconds.';
+    if (this.moveCooldown > 0) return `Ready again in ${Math.ceil(this.moveCooldown)} s.`;
+    return null;
+  }
+
+  /** ⚙️ Quick respawn (always offered): back on solid ground near the other players. Keeps health & items. */
+  quickRespawn(): string | null {
+    const why = this.moveBlocked();
+    if (why) return why;
+    this.rescue();
+    this.moveCooldown = 8;
+    return null;
+  }
+
+  /** Where everyone is (your own spot first), for the 📍 coordinates list. */
+  playerSpots(): { id: string; name: string; color: string; x: number; y: number; z: number; dist: number; me: boolean }[] {
+    const me = this.game.player.position;
+    const out = [{ id: this.selfId, name: this.players.get(this.selfId)?.name ?? this.net.name, color: this.players.get(this.selfId)?.color ?? this.net.color, x: Math.floor(me.x), y: Math.floor(me.y), z: Math.floor(me.z), dist: 0, me: true }];
+    for (const r of this.remotes.values()) {
+      if (!r.rig.root.visible && !r.dead) continue;
+      out.push({ id: r.id, name: r.name, color: r.color, x: Math.floor(r.pos.x), y: Math.floor(r.pos.y), z: Math.floor(r.pos.z), dist: Math.round(Math.hypot(r.pos.x - me.x, r.pos.z - me.z)), me: false });
+    }
+    return out;
+  }
+
+  /** 📍 Teleport to coordinates (y optional: lands on the ground there). Returns why not, or null when done. */
+  teleportTo(x: number, z: number, y?: number): string | null {
+    const why = this.moveBlocked();
+    if (why) return why;
+    if (![x, z].every(Number.isFinite) || Math.abs(x) > 30000 || Math.abs(z) > 30000) return 'Those coordinates are off the map.';
+    const fx = Math.floor(x), fz = Math.floor(z);
+    const g = this.groundAt(fx, fz);
+    const loadedY = this.game.world.isLoaded(fx, fz) ? this.game.world.standableY(fx, fz) : g.h;
+    const ground = Math.max(g.h, loadedY) + 1.1;
+    const ty = y !== undefined && Number.isFinite(y) ? Math.max(ground, Math.min(120, y)) : ground;
+    const p = this.game.player;
+    p.teleport(fx + 0.5, ty, fz + 0.5);
+    p.body.vel.set(0, 0, 0);
+    p.invulnerable = 2;
+    this.game.ensureSafePosition();
+    this.pendingSafe = true;
+    this.moveCooldown = 3;
+    this.game.audio.play('chime');
+    useGameStore.getState().toast(`Teleported to ${fx} ${Math.floor(ty)} ${fz}`, 'info', '📍');
+    return null;
+  }
+
+  /** 📍 Teleport next to another player. */
+  teleportToPlayer(id: string): string | null {
+    const r = this.remotes.get(id);
+    if (!r || r.dead) return 'That player is respawning — try again in a moment.';
+    // a couple of blocks beside them, facing the same way
+    const a = r.yaw + Math.PI / 2;
+    return this.teleportTo(r.pos.x + Math.sin(a) * 2, r.pos.z + Math.cos(a) * 2);
+  }
+
   /** 🆘 Teleport next to another player (or a random arena spot). Keeps health & items; no death counted. */
   emergencyRespawn(): void {
     if (!this.emergency) return;
+    this.rescue();
+  }
+
+  private rescue(): void {
     const p = this.game.player;
     const alive = [...this.remotes.values()].filter((r) => !r.dead && r.rig.root.visible);
     let target: { x: number; y: number; z: number } | null = null;
@@ -575,6 +675,15 @@ export class PvpSession {
         return this.restartLocal();
       case 'full':
         return this.connectionLost('That match is full.');
+      case 'base': {
+        // the host's world as it was when they opened it (applied even when building is off in the match)
+        const list = msg.e as [number, number, number, number][];
+        if (!Array.isArray(list)) return;
+        for (const e of list.slice(0, 400)) if (Array.isArray(e) && e.length === 4 && e.every(Number.isInteger)) this.game.world.applyRemote(e[0], e[1], e[2], e[3] & 255, e[3] >> 8);
+        return;
+      }
+      case 'objs':
+        return this.addObjects(msg.o);
       case 'loot':
         return this.spawnLoot(String(msg.id ?? ''), this.cleanLoot(msg.items, String(msg.id ?? '')));
       case 'lgone':
@@ -604,6 +713,9 @@ export class PvpSession {
     };
     this.net.send(welcome, id);
     // the map changes so far follow in small packets (WebRTC JSON messages must stay under ~16 KB)
+    // an opened world: its own block changes and Build Home objects first, then the match's edits
+    for (let i = 0; i < this.baseEdits.length; i += 300) this.net.send({ t: 'base', e: this.baseEdits.slice(i, i + 300) }, id);
+    for (let i = 0; i < this.objectList.length; i += 60) this.net.send({ t: 'objs', o: this.objectList.slice(i, i + 60) }, id);
     const edits = [...this.editLog.values()].slice(-12000);
     for (let i = 0; i < edits.length; i += 300) this.net.send({ t: 'b', id: this.selfId, e: edits.slice(i, i + 300) }, id);
     this.broadcastRoster();
@@ -687,6 +799,29 @@ export class PvpSession {
     }
     if (done > 0 || before <= 0) this.lastHit = { by: attacker, at: performance.now(), how: String(msg.how ?? 'melee') };
     if (done > 0) useGameStore.setState({ hurtFlash: performance.now() });
+  }
+
+  // ---------------------------------------------------------------- an opened Build Home's objects
+
+  /** Show (and collide with) Build Home objects: from the host's lot, or received from the host. */
+  private addObjects(raw: unknown): void {
+    if (!Array.isArray(raw) || !raw.length) return;
+    if (!this.objects) {
+      this.objects = new BuildObjects(this.game.world, objectMaterials(this.game.assets.uniforms));
+      this.game.scene.add(this.objects.group);
+    }
+    for (const o of raw.slice(0, 5000)) {
+      if (!o || typeof o !== 'object') continue;
+      const v = o as Record<string, unknown>;
+      if (typeof v.itemId !== 'string' || ![v.x, v.y, v.z, v.rotation].every((n) => typeof n === 'number' && Number.isFinite(n))) continue;
+      const save: Omit<BuildObjectSave, 'id'> = {
+        itemId: v.itemId, x: v.x as number, y: v.y as number, z: v.z as number, rotation: v.rotation as number,
+        variantId: typeof v.variantId === 'string' ? v.variantId : '', state: v.state && typeof v.state === 'object' ? (v.state as BuildObjectSave['state']) : undefined,
+      };
+      if (this.objects.add(save)) this.objectList.push(save);
+    }
+    this.relightTimer = 0.5;
+    this.relightsLeft = 8;
   }
 
   // ---------------------------------------------------------------- loot (a defeated player's items)
@@ -947,6 +1082,16 @@ export class PvpSession {
         this.net.send({ t: 'clock', time: g.clock.time, left: this.timeLeft });
       }
     }
+    if (this.objects) {
+      const p = g.player.position;
+      this.objects.tick(dt, p.x, p.z);
+      // lighting is sampled from the terrain: refresh it a few times while the lot's chunks stream in
+      if (this.relightsLeft > 0 && (this.relightTimer -= dt) <= 0) {
+        this.relightsLeft--;
+        this.relightTimer = 3;
+        this.objects.relightNear(this.center.x, this.center.z, 96);
+      }
+    }
     // respawn
     this.updateStuck(dt);
     this.updateVoice(dt);
@@ -967,6 +1112,11 @@ export class PvpSession {
     this.game.world.onSet = null;
     this.game.drops.onNetPickup = null;
     this.game.drops.clearNet();
+    if (this.objects) {
+      this.game.scene.remove(this.objects.group);
+      this.objects.dispose();
+      this.objects = null;
+    }
     this.voice.dispose();
     for (const r of this.remotes.values()) r.dispose(this.group);
     this.remotes.clear();

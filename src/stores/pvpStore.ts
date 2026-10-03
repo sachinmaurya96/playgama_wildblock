@@ -19,6 +19,21 @@ export const PVP_MAPS: { id: PvpMap; name: string; text: string }[] = [
 /** battle = players fight for takedowns; together = co-op building & exploring (players can't hurt each other). */
 export type PvpStyle = 'battle' | 'together';
 
+/**
+ * "Play this world with friends": the match runs on the host's own Survival world or Build Home lot —
+ * same seed, caves and lot, the host's block changes (and Build Home objects) sent to everyone who joins.
+ */
+export interface PvpSource {
+  kind: 'survival' | 'build';
+  name: string;
+  seed: number;
+  caves: number;
+  /** Build Home lot type (flat arena); missing = the main wild terrain. */
+  arena?: Exclude<PvpMap, 'wild'>;
+  /** Where the host was standing: everyone spawns around it. */
+  spawn: { x: number; y: number; z: number };
+}
+
 export interface PvpSettings {
   style: PvpStyle;
   /** Match length in minutes (0 = no time limit). */
@@ -34,6 +49,8 @@ export interface PvpSettings {
   building: boolean;
   /** World seed text: same seed = same map. */
   seedText: string;
+  /** Set when the host opened their own world to friends (see PvpSource). */
+  source?: PvpSource;
 }
 
 export const DEFAULT_PVP_SETTINGS: PvpSettings = { style: 'battle', minutes: 10, killLimit: 15, kit: 'knight', map: 'wild', creatures: false, building: true, seedText: '' };

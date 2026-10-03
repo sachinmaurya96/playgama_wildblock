@@ -18,6 +18,7 @@ export function BuildDialogs() {
     return (
       <div className="modal-backdrop">
         <div className="panel confirm-panel">
+          <button className="close-x" onClick={close} aria-label="Cancel">✕</button>
           <h2 className="panel-title">Are you sure?</h2>
           <p>{confirm.text}</p>
           <div className="menu-buttons row">
@@ -41,6 +42,7 @@ function LabelDialog({ id, initial, onDone }: { id: number; initial: string; onD
   return (
     <div className="modal-backdrop">
       <form className="panel confirm-panel" onSubmit={(e) => { e.preventDefault(); save(text); }}>
+        <button type="button" className="close-x" onClick={onDone} aria-label="Cancel">✕</button>
         <h2 className="panel-title">🏷️ Room label</h2>
         <input className="search" autoFocus maxLength={18} value={text} onChange={(e) => setText(e.target.value)} />
         <div className="label-chips">
@@ -60,6 +62,7 @@ function BlueprintDialog({ onDone }: { onDone: () => void }) {
   return (
     <div className="modal-backdrop">
       <form className="panel confirm-panel" onSubmit={(e) => { e.preventDefault(); void Game.current?.build?.saveRegionAsBlueprint(name); onDone(); }}>
+        <button type="button" className="close-x" onClick={onDone} aria-label="Cancel">✕</button>
         <h2 className="panel-title">📐 Save as blueprint</h2>
         <p className="muted">Blueprints are shared by all your Build Home projects (Catalog → Presets → My Blueprints).</p>
         <input className="search" autoFocus maxLength={32} value={name} onChange={(e) => setName(e.target.value)} />

@@ -31,10 +31,12 @@ export function PauseMenu() {
   return (
     <div className="modal-backdrop">
       <div className="panel pause-panel">
+        <button className="close-x" onClick={resume} aria-label="Resume">✕</button>
         <h2 className="panel-title">🍃 Paused</h2>
         <p className="muted">{world?.name} · Day {day}</p>
         <div className="menu-buttons">
           <button className="btn primary" onClick={resume} autoFocus>Resume</button>
+          <button className="btn pvp-btn" onClick={() => useGameStore.getState().setOverlay('settings')}>🎮 Play this world with friends</button>
           <button className="btn" onClick={() => useGameStore.getState().setOverlay('settings')}>Settings</button>
           <button className="btn" onClick={() => setControls(true)}>Controls</button>
           <button className="btn" onClick={() => Game.current?.openOverlay('journal')}>Journal</button>
@@ -56,6 +58,7 @@ function PvpPause({ resume, onControls }: { resume: () => void; onControls: () =
   return (
     <div className="modal-backdrop">
       <div className="panel pause-panel">
+        <button className="close-x" onClick={resume} aria-label="Back to the game">✕</button>
         <h2 className="panel-title">{together ? '🤝 Build Together' : '⚔️ PvP Battle'}</h2>
         <p className="muted">The game keeps going while this menu is open!</p>
         <div className="pvp-invite">
@@ -90,12 +93,14 @@ function BuildPause({ resume, quit, busy, onControls }: { resume: () => void; qu
   return (
     <div className="modal-backdrop">
       <div className="panel pause-panel">
+        <button className="close-x" onClick={resume} aria-label="Keep building">✕</button>
         <h2 className="panel-title">🏡 {world?.name}</h2>
         <p className="muted">Build Home project · autosaves as you build</p>
         <div className="menu-buttons">
           <button className="btn build-home-btn" onClick={resume} autoFocus>Keep building</button>
           <button className="btn" onClick={() => { useGameStore.getState().setOverlay(null); useBuildStore.getState().set({ walkthrough: false }); Game.current?.build?.setWalkthrough(true); Game.current?.input.requestLock(); }}>🚶 Walkthrough</button>
           <button className="btn" onClick={() => { useGameStore.getState().setOverlay(null); Game.current?.build?.togglePhoto(); }}>📷 Photo mode</button>
+          <button className="btn pvp-btn" onClick={() => useGameStore.getState().setOverlay('settings')}>🎮 Play this home with friends</button>
           <button className="btn" onClick={() => useGameStore.getState().setOverlay('settings')}>Settings</button>
           <button className="btn" onClick={onControls}>Controls</button>
           <button className="btn small ghost" onClick={tutorial}>Show the tutorial again</button>
@@ -124,6 +129,7 @@ export function ControlsCard({ onBack, build = false }: { onBack: () => void; bu
   return (
     <div className="modal-backdrop">
       <div className="panel controls-panel">
+        <button className="close-x" onClick={onBack} aria-label="Back">✕</button>
         <h2 className="panel-title">⌨️ Controls</h2>
         <div className="controls-list scroll">
           {rows.map(([k, v]) => (

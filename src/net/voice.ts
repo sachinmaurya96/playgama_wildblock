@@ -41,16 +41,16 @@ const PROX_MAX = 48; // silent beyond this
 interface Prefs {
   mode: VoiceMode;
   proximity: boolean;
-  /** Listening was on last match: turn it back on at the first tap / key press. */
+  /** Hear the room (on by default for everyone; off only if this player switched it off). */
   listen: boolean;
 }
 
 function loadPrefs(): Prefs {
   try {
     const v = JSON.parse(localStorage.getItem('wb-voice') ?? '{}');
-    return { mode: v.mode === 'open' ? 'open' : 'push', proximity: v.proximity !== false, listen: v.listen === true };
+    return { mode: v.mode === 'open' ? 'open' : 'push', proximity: v.proximity !== false, listen: v.listenOff !== true };
   } catch {
-    return { mode: 'push', proximity: true, listen: false };
+    return { mode: 'push', proximity: true, listen: true };
   }
 }
 
@@ -65,7 +65,6 @@ export class VoiceChat {
   micOn = false;
   private stream: MediaStream | null = null;
   private micPending: Promise<boolean> | null = null;
-  private connectPending: Promise<void> | null = null;
   private ctx: AudioContext | null = null;
   private links = new Map<string, Link>();
   /** Players who announced they are in voice, with whether they listen / have a mic. */
@@ -76,7 +75,7 @@ export class VoiceChat {
   private localAnalyser: AnalyserNode | null = null;
   private localLevel: Uint8Array<ArrayBuffer> | null = null;
   private wantListen: boolean;
-  private autoStartOff: (() => void) | null = null;
+  private gestureOff: (() => void) | null = null;
   muted = new Set<string>();
   volumes = new Map<string, number>();
 
@@ -89,11 +88,34 @@ export class VoiceChat {
     this.proximity = p.proximity;
     this.wantListen = p.listen;
     this.publish();
+    // iOS / Safari only let audio start inside a tap (touchend / click) or key press, and pause it again when the
+    // mic switches on — so every tap retries: wake the audio engine and any voice that's waiting to play
+    const wake = () => this.unlockAudio();
+    const evs = ['touchend', 'pointerup', 'click', 'keydown'];
+    for (const t of evs) window.addEventListener(t, wake, true);
+    this.gestureOff = () => {
+      for (const t of evs) window.removeEventListener(t, wake, true);
+    };
+  }
+
+  /**
+   * Start / wake the audio engine. Call it straight from a tap or key handler (never after an await):
+   * phones and tablets only allow audio to start inside the user's gesture. Never waits — a context that
+   * can't start yet just starts on the next tap.
+   */
+  unlockAudio(): void {
+    if (!this.ctx) {
+      const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AC) return;
+      this.ctx = new AC();
+    }
+    if (this.ctx.state !== 'running') void this.ctx.resume().catch(() => {});
+    for (const l of this.links.values()) if (l.audio?.paused) void l.audio.play().catch(() => {});
   }
 
   private savePrefs() {
     try {
-      localStorage.setItem('wb-voice', JSON.stringify({ mode: this.mode, proximity: this.proximity, listen: this.listen }));
+      localStorage.setItem('wb-voice', JSON.stringify({ mode: this.mode, proximity: this.proximity, listenOff: !this.wantListen }));
     } catch {
       /* private mode */
     }
@@ -123,36 +145,25 @@ export class VoiceChat {
   // ---------------------------------------------------------------- public controls
 
   /**
-   * Listening was on last time: switch it back on with the first tap / key press
-   * (browsers only start audio after a user gesture).
+   * Match start: listening is on by default for everyone (unless this player switched it off before).
+   * Joining voice needs no tap; the sound itself starts with the first tap / key press (browser rule).
    */
   autoStart(): void {
-    if (!this.wantListen || this.on || this.autoStartOff) return;
-    const go = () => {
-      this.autoStartOff?.();
-      if (!this.on) void this.setListen(true);
-    };
-    window.addEventListener('pointerdown', go, true);
-    window.addEventListener('keydown', go, true);
-    this.autoStartOff = () => {
-      window.removeEventListener('pointerdown', go, true);
-      window.removeEventListener('keydown', go, true);
-      this.autoStartOff = null;
-    };
+    if (this.wantListen && !this.on) void this.setListen(true);
   }
 
-  /** Join the voice mesh (no microphone yet). Call from a tap / click / key press (audio unlock). */
-  private connect(): Promise<void> {
-    if (this.on) return Promise.resolve();
-    this.connectPending ??= (async () => {
-      this.ctx ??= new AudioContext();
-      if (this.ctx.state === 'suspended') await this.ctx.resume().catch(() => {});
-      this.on = true;
-      this.announce();
-      for (const id of this.inVoice.keys()) this.maybeConnect(id);
-      this.publish({ voiceError: null });
-    })().finally(() => (this.connectPending = null));
-    return this.connectPending;
+
+  /**
+   * Join the voice mesh (no microphone yet). Never waits for the audio engine: on phones it may only
+   * start on a later tap (waiting here used to leave the 🎧 / 🎤 buttons doing nothing on iPad / iPhone).
+   */
+  private connect(): void {
+    this.unlockAudio();
+    if (this.on) return;
+    this.on = true;
+    this.announce();
+    for (const id of this.inVoice.keys()) this.maybeConnect(id);
+    this.publish({ voiceError: null });
   }
 
   /** Ask for the microphone once; afterwards it's switched on / off instantly. */
@@ -177,7 +188,16 @@ export class VoiceChat {
           this.localLevel = new Uint8Array(this.localAnalyser.frequencyBinCount);
           src.connect(this.localAnalyser);
         }
-        for (const l of this.links.values()) void l.sender?.replaceTrack(track).catch(() => {});
+        // Safari won't start sending on a link negotiated without a mic, so rebuild every link with the mic
+        // on it from the start (the player who started a link rebuilds it; the other one asks them to)
+        for (const [id, l] of [...this.links]) {
+          if (l.initiator) {
+            this.closeLink(id);
+            this.maybeConnect(id);
+          } else this.send({ t: 'v', id: this.selfId, to: id, kind: 'recall' });
+        }
+        // iOS pauses audio while it switches to "recording": wake it again (or on the next tap)
+        this.unlockAudio();
       } catch (e) {
         this.stream = null;
         const name = (e as Error)?.name ?? '';
@@ -193,8 +213,7 @@ export class VoiceChat {
 
   /** 🎧 Listen on / off. Turning it on joins voice; with no mic in use, turning it off leaves voice. */
   async setListen(v: boolean): Promise<void> {
-    this.autoStartOff?.();
-    if (v) await this.connect();
+    if (v) this.connect();
     this.listen = v;
     this.wantListen = v;
     this.savePrefs();
@@ -217,7 +236,7 @@ export class VoiceChat {
       this.applyTrackState();
       return;
     }
-    await this.connect();
+    this.connect();
     if (!(await this.acquireMic())) return;
     this.micOn = true;
     this.applyTrackState();
@@ -228,7 +247,8 @@ export class VoiceChat {
     if (this.push[source] === held) return;
     this.push[source] = held;
     if (held && (!this.on || !this.stream)) {
-      void this.connect().then(() => this.acquireMic()).then(() => this.applyTrackState());
+      this.connect();
+      void this.acquireMic().then(() => this.applyTrackState());
     }
     this.applyTrackState();
   }
@@ -333,6 +353,12 @@ export class VoiceChat {
           await l.pc.setRemoteDescription(msg.sdp as RTCSessionDescriptionInit);
           await this.flushIce(l);
         }
+      } else if (msg.kind === 'recall') {
+        // they just switched their mic on: rebuild our link to them so their voice comes through
+        if (this.links.get(from)?.initiator) {
+          this.closeLink(from);
+          this.maybeConnect(from);
+        }
       } else if (msg.kind === 'ice') {
         const l = this.links.get(from);
         const c = msg.c as RTCIceCandidateInit;
@@ -370,10 +396,9 @@ export class VoiceChat {
     this.links.set(id, l);
     if (initiator) {
       // always a two-way audio channel, even before we have a mic (it's attached later with replaceTrack)
-      const tr = pc.addTransceiver('audio', { direction: 'sendrecv' });
-      l.sender = tr.sender;
       const track = this.stream?.getAudioTracks()[0];
-      if (track) void tr.sender.replaceTrack(track).catch(() => {});
+      const tr = track && this.stream ? pc.addTransceiver(track, { direction: 'sendrecv', streams: [this.stream] }) : pc.addTransceiver('audio', { direction: 'sendrecv' });
+      l.sender = tr.sender;
     }
     pc.onicecandidate = (e) => {
       if (e.candidate) this.send({ t: 'v', id: this.selfId, to: id, kind: 'ice', c: e.candidate.toJSON() });
@@ -397,6 +422,8 @@ export class VoiceChat {
     if (!ctx) return;
     // Chrome only feeds remote WebRTC audio into Web Audio when it's also attached to a media element
     const a = new Audio();
+    a.setAttribute('playsinline', '');
+    a.autoplay = true;
     a.srcObject = stream;
     a.muted = true;
     void a.play().catch(() => {});
@@ -515,7 +542,7 @@ export class VoiceChat {
   }
 
   dispose(): void {
-    this.autoStartOff?.();
+    this.gestureOff?.();
     this.disable();
     void this.ctx?.close().catch(() => {});
     this.ctx = null;

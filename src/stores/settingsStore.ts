@@ -34,6 +34,11 @@ export interface GyroSettings {
   invertY: boolean;
   /** 'always', or only while holding attack / use (aiming a bow). */
   when: 'always' | 'aiming';
+  /**
+   * How the browser names the rotation axes: 'standard' (Android / Chrome: beta = x, gamma = y) or
+   * 'apple' (iPhone / iPad — every iOS browser is Safari inside: alpha = x, beta = y). 'auto' detects it.
+   */
+  axes: 'auto' | 'standard' | 'apple';
 }
 
 /** Tuned starting points: phones are light (more hand shake → more smoothing); tablets are heavy (turned less → more sensitivity). */
@@ -51,7 +56,7 @@ export function detectGyroDevice(): 'phone' | 'tablet' {
 
 export function defaultGyro(): GyroSettings {
   const p = GYRO_PROFILES[detectGyroDevice()];
-  return { enabled: false, profile: 'auto', sensitivity: p.sensitivity, vertical: p.vertical, smoothing: p.smoothing, invertX: false, invertY: false, when: 'always' };
+  return { enabled: false, profile: 'auto', sensitivity: p.sensitivity, vertical: p.vertical, smoothing: p.smoothing, invertX: false, invertY: false, when: 'always', axes: 'auto' };
 }
 
 export type QualityPreset = 'low' | 'medium' | 'high' | 'auto' | 'custom';

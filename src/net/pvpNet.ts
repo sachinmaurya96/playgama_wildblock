@@ -27,6 +27,8 @@ export class NetSession {
   onPeerJoin: (id: string) => void = () => {};
   onClosed: (reason: string) => void = () => {};
   closedReason: string | null = null;
+  /** Host of an opened Build Home: the lot's objects (walls, furniture…), sent to each player who joins. */
+  sourceObjects: unknown[] = [];
 
   constructor(readonly transport: Transport, readonly code: string, readonly online: boolean, readonly name: string, readonly color: string, public settings: PvpSettings) {
     this.isHost = transport.isHost;

@@ -324,7 +324,9 @@ export class Game {
     const pvp = this.pvp!;
     onProgress(0.22, 'Finding the arena');
     await new Promise((r) => setTimeout(r, 0));
-    const s = this.world.plotSampler ? { x: 0, y: PLOT_Y, z: 0 } : findSpawn(this.world.sampler);
+    // a world opened to friends: everyone starts around the spot where the host was standing
+    const src = pvp.settings.source;
+    const s = src ? { x: Math.floor(src.spawn.x), y: Math.floor(src.spawn.y), z: Math.floor(src.spawn.z) } : this.world.plotSampler ? { x: 0, y: PLOT_Y, z: 0 } : findSpawn(this.world.sampler);
     pvp.center = { x: s.x, y: s.y, z: s.z };
     useWorldStore.getState().reset({ x: s.x, y: s.y, z: s.z });
     pvp.giveKit();
