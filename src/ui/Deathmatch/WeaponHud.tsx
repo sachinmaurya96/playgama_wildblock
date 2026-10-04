@@ -48,7 +48,7 @@ export function WeaponHud() {
               <span>/ {reserve}</span>
             </div>
             <div className="dm-cal">{AMMO_NAMES[GUNS[gun].ammo]}</div>
-            <div className="dm-khint"><span><kbd className="dm-k">R</kbd>Reload</span><span><kbd className="dm-k">RMB</kbd>{gun === 'm24' ? 'Scope' : 'Aim'}</span></div>
+            <div className="dm-khint"><span><kbd className="dm-k">F</kbd>Fire</span><span><kbd className="dm-k">R</kbd>Reload</span><span><kbd className="dm-k">RMB</kbd>{gun === 'm24' ? 'Scope' : 'Aim'}</span></div>
             {reloading > 0 && (
               <div className="dm-reload">
                 <i style={{ width: `${Math.round(reloading * 100)}%` }} />
@@ -60,7 +60,7 @@ export function WeaponHud() {
         ) : (
           <>
             <div className="dm-cal">Melee · {SWORD.damage} damage</div>
-            <div className="dm-khint"><span><kbd className="dm-k">LMB</kbd>Swing</span></div>
+            <div className="dm-khint"><span><kbd className="dm-k">LMB / F</kbd>Swing</span></div>
           </>
         )}
       </div>

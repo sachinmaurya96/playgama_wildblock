@@ -6,6 +6,7 @@ import { VoiceChat } from '../../net/voice';
 import { useGameStore } from '../../stores/gameStore';
 import { useInventoryStore } from '../../stores/inventoryStore';
 import { usePvpStore, type PvpPlayerInfo, type PvpSettings } from '../../stores/pvpStore';
+import { useVoiceStore } from '../../stores/voiceStore';
 import { animateExplorer, buildExplorer, dressExplorer, dressFromItems, type Rig } from '../rendering/Models';
 import { makeStack, type ItemStack } from '../systems/InventoryLogic';
 import { BuildObjects, type ObjectOp } from '../build/BuildObjects';
@@ -235,12 +236,19 @@ export class PvpSession {
   /** Build Home with friends: this player's object changes waiting to be sent (latest move per object wins). */
   private outOps: ObjectOp[] = [];
 
+  private offRoster: () => void;
+
   constructor(private game: Game) {
     const net = pvpNet.current;
     if (!net) throw new Error('No PvP connection — start from the PvP menu.');
     this.net = net;
     this.settings = net.settings;
     this.voice = new VoiceChat(net.selfId, (m) => this.net.send(m, this.isHost && typeof m.to === 'string' ? m.to : undefined));
+    // the shared voice controls name & colour players from this room's roster
+    const roster = (pl: PvpPlayerInfo[]) => useVoiceStore.getState().set({ roster: pl.map((p) => ({ id: p.id, name: p.name, color: p.color })) });
+    this.offRoster = usePvpStore.subscribe((st, prev) => {
+      if (st.players !== prev.players) roster(st.players);
+    });
     this.group.name = 'pvp-players';
     game.scene.add(this.group);
     const w = net.welcome;
@@ -1202,6 +1210,7 @@ export class PvpSession {
       this.objects.dispose();
       this.objects = null;
     }
+    this.offRoster();
     this.voice.dispose();
     for (const r of this.remotes.values()) r.dispose(this.group);
     this.remotes.clear();

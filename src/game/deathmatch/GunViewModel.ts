@@ -31,7 +31,7 @@ class Spring {
 const VIEW_SCALE = 0.42;
 const HIP = new THREE.Vector3(0.19, -0.17, -0.36);
 /** Aim position: the sight line (≈0.16 above the grip on every model) on the camera's centre. */
-const ADS = new THREE.Vector3(0, -0.16 * VIEW_SCALE, -0.3);
+const ADS = new THREE.Vector3(0, -0.16 * VIEW_SCALE, -0.13); // eye just behind the red-dot sight, stock past the camera
 
 export interface GunViewInput {
   dt: number;

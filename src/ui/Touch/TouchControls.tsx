@@ -326,6 +326,7 @@ export function TouchControls() {
       {dm && (
         <div className="touch-top">
           <button className="tbtn small" aria-label="Scoreboard" {...tapBtn(() => Game.current?.dm?.toggleScoreboard())}>🏆</button>
+          <button className="tbtn small" aria-label="Options" {...tapBtn(() => Game.current?.setDmOptions(!useDeathmatchStore.getState().optionsOpen))}>⚙️</button>
           <button className="tbtn small" aria-label="Pause" {...tapBtn(() => Game.current?.openOverlay('pause'))}>⏸</button>
         </div>
       )}

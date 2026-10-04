@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Game } from '../../game/Game';
 import { useGameStore } from '../../stores/gameStore';
 import { usePvpStore } from '../../stores/pvpStore';
 import { keyLabel, useSettingsStore } from '../../stores/settingsStore';
 import { Gyro } from '../../game/core/Gyro';
+import { VoiceDock, VoicePanel } from '../Voice/VoiceControls';
+import { PlayerRadar, type RadarBlip } from '../common/Radar';
 
 export function fmtTime(s: number): string {
   const m = Math.floor(s / 60);
@@ -34,6 +36,7 @@ export function CoopBar() {
   const online = usePvpStore((s) => s.online);
   const players = usePvpStore((s) => s.players);
   const open = usePvpStore((s) => s.scoreboardOpen);
+  const gear = usePvpStore((s) => s.gearOpen);
   if (!active) return null;
   return (
     <>
@@ -42,8 +45,11 @@ export function CoopBar() {
           {online ? '🌐' : '💻'} <b>{code}</b> <small>· {players.length}/8</small>
         </button>
         <button className="pvp-chip" onClick={() => usePvpStore.getState().set({ scoreboardOpen: !open })} title="Who's building">🤝 {players.length} 👥</button>
+        <button className={`pvp-chip gear ${gear ? 'on' : ''}`} aria-label="Options" title="Options: voice, players, invite, settings, exit (Esc closes)" onClick={() => Game.current?.setPvpOptions(!gear)}>⚙️</button>
       </div>
-      <VoiceHud />
+      {gear && <GearPanel kind="build" />}
+      {/* Build Home uses T / H for its tools, so no key caps on the voice buttons here */}
+      <VoiceDock keys={false} />
       {open && <Scoreboard />}
     </>
   );
@@ -99,7 +105,7 @@ export function PvpHud() {
       </div>
       {gear && <GearPanel />}
       <Radar />
-      <VoiceHud />
+      <VoiceDock />
       <KillFeed />
       <RespawnBanner />
       {open && <Scoreboard />}
@@ -194,148 +200,27 @@ export function Scoreboard() {
   );
 }
 
-const RADAR_RANGE = 60; // blocks from the centre to the rim
-
-/**
- * Player radar (top-left): you in the middle, facing up. Other players are
- * coloured dots; players further away sit on the rim as arrows with their
- * distance. ▲ / ▼ = well above / below you (on a cliff, down in a cave).
- */
+/** PvP: everyone else in the room (alive, recently heard from). */
 function Radar() {
-  const ref = useRef<HTMLCanvasElement>(null);
-  const [nearest, setNearest] = useState<string>('');
-  useEffect(() => {
-    let raf = 0;
-    let textTimer = 0;
-    const loop = () => {
-      raf = requestAnimationFrame(loop);
-      const c = ref.current;
-      const g = Game.current;
-      if (!c || !g?.pvp) return;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const size = c.clientWidth;
-      if (c.width !== Math.round(size * dpr)) {
-        c.width = Math.round(size * dpr);
-        c.height = Math.round(size * dpr);
-      }
-      const x = c.getContext('2d')!;
-      x.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const R = size / 2;
-      x.clearRect(0, 0, size, size);
-      // disc
-      x.fillStyle = 'rgba(30, 24, 16, 0.55)';
-      x.beginPath();
-      x.arc(R, R, R - 1, 0, Math.PI * 2);
-      x.fill();
-      x.strokeStyle = 'rgba(255, 246, 224, 0.55)';
-      x.lineWidth = 2;
-      x.stroke();
-      x.strokeStyle = 'rgba(255, 246, 224, 0.18)';
-      x.lineWidth = 1;
-      for (const f of [1 / 3, 2 / 3]) {
-        x.beginPath();
-        x.arc(R, R, (R - 6) * f, 0, Math.PI * 2);
-        x.stroke();
-      }
-      x.beginPath();
-      x.moveTo(R, 6);
-      x.lineTo(R, size - 6);
-      x.moveTo(6, R);
-      x.lineTo(size - 6, R);
-      x.stroke();
-      const p = g.player.position;
-      const yaw = g.player.yaw;
-      const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
-      const rx = Math.cos(yaw), rz = -Math.sin(yaw);
-      // north marker on the rim
-      {
-        const sx = 0 * rx + -1 * rz, sy = -(0 * fx + -1 * fz);
-        const l = Math.hypot(sx, sy) || 1;
-        x.fillStyle = '#ffe08a';
-        x.font = `900 ${Math.max(9, size * 0.09)}px Nunito, sans-serif`;
-        x.textAlign = 'center';
-        x.textBaseline = 'middle';
-        x.fillText('N', R + (sx / l) * (R - 9), R + (sy / l) * (R - 9));
-      }
-      const scale = (R - 10) / RADAR_RANGE;
-      let best: { name: string; d: number } | null = null;
-      for (const r of g.pvp.remotes.values()) {
-        if (r.dead || r.lastHeard < performance.now() - 6000) continue;
-        const dx = r.pos.x - p.x, dz = r.pos.z - p.z, dy = r.pos.y - p.y;
-        const d = Math.hypot(dx, dz);
-        if (!best || d < best.d) best = { name: r.name, d };
-        let sx = (dx * rx + dz * rz) * scale, sy = -(dx * fx + dz * fz) * scale;
-        const far = d > RADAR_RANGE;
-        if (far) {
-          const l = Math.hypot(sx, sy) || 1;
-          sx = (sx / l) * (R - 10);
-          sy = (sy / l) * (R - 10);
-        }
-        const px = R + sx, py = R + sy;
-        x.fillStyle = r.color;
-        x.strokeStyle = 'rgba(20, 12, 6, 0.9)';
-        x.lineWidth = 2;
-        if (far) {
-          // arrow pointing outwards
-          const a = Math.atan2(sy, sx);
-          x.save();
-          x.translate(px, py);
-          x.rotate(a);
-          x.beginPath();
-          x.moveTo(7, 0);
-          x.lineTo(-5, -5.5);
-          x.lineTo(-5, 5.5);
-          x.closePath();
-          x.fill();
-          x.stroke();
-          x.restore();
-          x.fillStyle = '#fff6e0';
-          x.font = `800 ${Math.max(8, size * 0.075)}px Nunito, sans-serif`;
-          const tx = R + sx * 0.72, ty = R + sy * 0.72;
-          x.fillText(`${Math.round(d)}m`, tx, ty);
-        } else {
-          x.beginPath();
-          x.arc(px, py, 5, 0, Math.PI * 2);
-          x.fill();
-          x.stroke();
-          if (Math.abs(dy) > 4) {
-            x.fillStyle = '#fff6e0';
-            x.font = `900 ${Math.max(8, size * 0.08)}px Nunito, sans-serif`;
-            x.fillText(dy > 0 ? '▲' : '▼', px, py - 10);
-          }
-        }
-      }
-      // you
-      x.fillStyle = '#ffffff';
-      x.strokeStyle = 'rgba(20, 12, 6, 0.9)';
-      x.lineWidth = 2;
-      x.beginPath();
-      x.moveTo(R, R - 8);
-      x.lineTo(R - 6, R + 6);
-      x.lineTo(R, R + 3);
-      x.lineTo(R + 6, R + 6);
-      x.closePath();
-      x.fill();
-      x.stroke();
-      textTimer -= 1;
-      if (textTimer <= 0) {
-        textTimer = 15;
-        setNearest(best ? `${best.name} · ${Math.round(best.d)}m` : '');
-      }
-    };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, []);
   return (
-    <div className="pvp-radar" title="Player radar — you are the white arrow, facing up">
-      <canvas ref={ref} />
-      <small>{nearest ? `Nearest: ${nearest}` : 'No one nearby yet'}</small>
-    </div>
+    <PlayerRadar
+      blips={() => {
+        const pvp = Game.current?.pvp;
+        if (!pvp) return null;
+        const out: RadarBlip[] = [];
+        for (const r of pvp.remotes.values()) if (!r.dead && r.lastHeard >= performance.now() - 6000) out.push({ name: r.name, color: r.color, x: r.pos.x, y: r.pos.y, z: r.pos.z });
+        return out;
+      }}
+    />
   );
 }
 
-/** ⚙️ quick options for a PvP game: camera view, controls, scoreboard, invite, settings and exit. */
-function GearPanel() {
+/**
+ * ⚙️ quick options: camera view, controls, voice, scoreboard, invite, settings and exit.
+ * kind 'build' = Build Home with friends (its own camera & tools: no camera / respawn / teleport rows).
+ */
+function GearPanel({ kind = 'pvp' }: { kind?: 'pvp' | 'build' }) {
+  const build = kind === 'build';
   const close = () => usePvpStore.getState().set({ gearOpen: false });
   const code = usePvpStore((s) => s.code);
   const keys = useSettingsStore((s) => s.controls.keys);
@@ -352,8 +237,9 @@ function GearPanel() {
     if (touch) close();
     else Game.current?.setPvpOptions(false);
   };
-  const exit = () => {
+  const exit = async () => {
     if (!confirmExit) return setConfirmExit(true);
+    if (build) await Game.current?.saveNow('quit');
     useGameStore.setState({ overlay: null });
     useGameStore.getState().setScreen('menu');
   };
@@ -363,21 +249,33 @@ function GearPanel() {
         <b>⚙️ Options{!touch && <small className="muted"> · {keyLabel(keys.options)} / Esc to close</small>}</b>
         <button className="gear-x" onClick={back} aria-label="Close options">✕</button>
       </div>
-      <div className="gear-row">
+      {!build && <div className="gear-row">
         <span>👁️ Camera</span>
         <div className="seg">
           <button className={`seg-btn ${camera === 'first' ? 'active' : ''}`} onClick={() => setCamera('first')}>1st person</button>
           <button className={`seg-btn ${camera === 'third' ? 'active' : ''}`} onClick={() => setCamera('third')}>3rd person</button>
         </div>
-      </div>
-      <QuickRespawn onDone={back} />
-      {touch && <GyroRow />}
-      <VoicePanel />
-      <LocationPanel onDone={back} />
+      </div>}
+      {!build && <QuickRespawn onDone={back} />}
+      {touch && !build && <GyroRow />}
+      <VoicePanel keys={!build} />
+      {!build && <LocationPanel onDone={back} />}
       <button className="btn small" onClick={() => setHelp(!help)}>🎮 Controls</button>
       {help && (
         <div className="gear-help">
-          {touch ? (
+          {build ? (
+            touch ? (
+              <>
+                <div><b>Left stick</b> move · <b>drag</b> look · <b>🧱</b> place · <b>⤒</b> jump (double-tap to fly)</div>
+                <div><b>🎤</b> talk · <b>🎧</b> listen (voice chat) · <b>⚙️</b> this menu</div>
+              </>
+            ) : (
+              <>
+                <div><b>WASD</b> move · <b>Space</b> jump (double-tap to fly) · <b>Left click</b> place · <b>Right click</b> remove</div>
+                <div><b>Esc</b> pause / close · <b>🎤 / 🎧</b> buttons on the left: voice chat · <b>⚙️</b> this menu</div>
+              </>
+            )
+          ) : touch ? (
             <>
               <div><b>Left stick</b> move · push to the rim to sprint</div>
               <div><b>Drag right side</b> look · <b>tap</b> attack / use · <b>hold</b> dig</div>
@@ -399,7 +297,7 @@ function GearPanel() {
       <button className="btn small" onClick={() => { close(); usePvpStore.getState().set({ scoreboardOpen: true }); }}>🏆 Players & scores</button>
       <button className="btn small" onClick={() => void copyInvite(code)}>📋 Invite friends</button>
       <button className="btn small" onClick={() => { close(); Game.current?.openOverlay('settings'); }}>⚙️ Settings (sound, graphics…)</button>
-      <button className={`btn small ${confirmExit ? 'danger' : ''}`} onClick={exit}>{confirmExit ? 'Tap again to leave' : '🚪 Exit game'}</button>
+      <button className={`btn small ${confirmExit ? 'danger' : ''}`} onClick={() => void exit()}>{confirmExit ? 'Tap again to leave' : build ? '🚪 Save & exit' : '🚪 Exit game'}</button>
       <button className="btn small primary" onClick={back}>Resume</button>
     </div>
   );
@@ -509,7 +407,7 @@ function LocationPanel({ onDone }: { onDone: () => void }) {
 }
 
 /** Gyro aiming quick switch (phones & tablets); fine-tuning lives in Settings → Controls. */
-function GyroRow() {
+export function GyroRow() {
   const gyro = useSettingsStore((s) => s.controls.gyro);
   const [err, setErr] = useState<string | null>(null);
   const set = async (on: boolean) => {
@@ -531,136 +429,5 @@ function GyroRow() {
       </div>
       {err && <small className="voice-err">{err}</small>}
     </>
-  );
-}
-
-/** Voice chat section of the ⚙️ panel: listen / talk, talk style, proximity, per-player mute, leave voice. */
-function VoicePanel() {
-  const on = usePvpStore((s) => s.voiceOn);
-  const listen = usePvpStore((s) => s.voiceListen);
-  const micReady = usePvpStore((s) => s.voiceMicReady);
-  const mode = usePvpStore((s) => s.voiceMode);
-  const prox = usePvpStore((s) => s.voiceProximity);
-  const peers = usePvpStore((s) => s.voicePeers);
-  const deaf = usePvpStore((s) => s.voiceDeaf);
-  const muted = usePvpStore((s) => s.voiceMuted);
-  const speaking = usePvpStore((s) => s.voiceSpeaking);
-  const err = usePvpStore((s) => s.voiceError);
-  const players = usePvpStore((s) => s.players);
-  const keys = useSettingsStore((s) => s.controls.keys);
-  const touch = !!Game.current?.input.touch.active;
-  const voice = () => Game.current?.pvp?.voice;
-  return (
-    <div className="voice-panel">
-      <div className="gear-row">
-        <span>🎧 Listen</span>
-        <div className="seg">
-          <button className={`seg-btn ${!listen ? 'active' : ''}`} onClick={() => void voice()?.setListen(false)}>Off</button>
-          <button className={`seg-btn ${listen ? 'active' : ''}`} onClick={() => void voice()?.setListen(true)}>On</button>
-        </div>
-      </div>
-      <div className="gear-row">
-        <span>🎤 Talk</span>
-        <div className="seg">
-          <button className={`seg-btn ${mode === 'push' ? 'active' : ''}`} onClick={() => voice()?.setMode('push')}>Hold to talk</button>
-          <button className={`seg-btn ${mode === 'open' ? 'active' : ''}`} onClick={() => voice()?.setMode('open')}>Tap on / off</button>
-        </div>
-      </div>
-      <small className="muted">
-        {touch ? 'Use the 🎤 and 🎧 buttons on the left of the screen.' : `Keys: ${keyLabel(keys.talk)} talk · ${keyLabel(keys.listen)} listen.`}{' '}
-        {mode === 'push' ? 'Hold 🎤 while you speak.' : 'Tap 🎤 to open / close your mic.'}
-      </small>
-      {on && (
-        <div className="gear-row sub">
-          <span>Hear</span>
-          <div className="seg">
-            <button className={`seg-btn ${prox ? 'active' : ''}`} onClick={() => voice()?.setProximity(true)}>Nearby louder</button>
-            <button className={`seg-btn ${!prox ? 'active' : ''}`} onClick={() => voice()?.setProximity(false)}>Everyone</button>
-          </div>
-        </div>
-      )}
-      {err && <small className="voice-err">{err}</small>}
-      {on && (
-        <div className="voice-list">
-          {players.filter((p) => peers.includes(p.id)).map((p) => (
-            <div key={p.id} className={`voice-row ${speaking.includes(p.id) ? 'speaking' : ''}`}>
-              <span className="dot" style={{ background: p.color }} />
-              <span className="vname">{p.name}{deaf.includes(p.id) ? ' · 🔕 not listening' : ''}</span>
-              <button className="btn small" onClick={() => voice()?.toggleMute(p.id)}>{muted.includes(p.id) ? '🔇 Unmute' : '🔊 Mute'}</button>
-            </div>
-          ))}
-          {!peers.length && <small className="muted">No one else is in voice yet — ask friends to tap 🎧 or 🎤.</small>}
-        </div>
-      )}
-      {micReady && <button className="btn small" onClick={() => voice()?.releaseMic()}>🎙️ Stop using the microphone</button>}
-      {on && <button className="btn small" onClick={() => { voice()?.releaseMic(); void voice()?.setListen(false); }}>Leave voice chat</button>}
-      {!on && <small className="muted">Listening is off. Tap 🎧 to hear the room again. Only people in this room can hear you; your mic is used only while you talk.</small>}
-    </div>
-  );
-}
-
-/**
- * Voice controls on screen: 🎧 listen (tap on / off) and 🎤 talk (hold, or tap to toggle in open-mic mode),
- * plus who is speaking right now.
- */
-function VoiceHud() {
-  const listen = usePvpStore((s) => s.voiceListen);
-  const micOn = usePvpStore((s) => s.voiceMicOn);
-  const mode = usePvpStore((s) => s.voiceMode);
-  const talking = usePvpStore((s) => s.voiceTalking);
-  const speaking = usePvpStore((s) => s.voiceSpeaking);
-  const players = usePvpStore((s) => s.players);
-  const selfId = usePvpStore((s) => s.selfId);
-  const keys = useSettingsStore((s) => s.controls.keys);
-  const touch = !!Game.current?.input.touch.active;
-  const voice = () => Game.current?.pvp?.voice;
-  const others = players.filter((p) => p.id !== selfId && speaking.includes(p.id)).slice(0, 4);
-  const hold = (v: boolean) => (e: React.PointerEvent) => {
-    e.stopPropagation();
-    voice()?.setPush('button', v);
-    try {
-      if (v) (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-    } catch {
-      /* pointer already gone: release still arrives via pointerup / cancel */
-    }
-  };
-  // taps use click (a real "user gesture" on iPhone / iPad, unlike pointerdown) so audio is allowed to start
-  const talkProps = mode === 'push'
-    ? { onPointerDown: hold(true), onPointerUp: hold(false), onPointerCancel: hold(false), onLostPointerCapture: hold(false), onClick: () => voice()?.unlockAudio() }
-    : { onPointerDown: (e: React.PointerEvent) => e.stopPropagation(), onClick: () => void voice()?.toggleTalk() };
-  const talkLabel = talking ? 'Talking' : mode === 'push' ? 'Hold to talk' : micOn ? 'Mic on' : 'Mic off';
-  return (
-    <div className="voice-dock" onPointerDown={(e) => e.stopPropagation()}>
-      {others.length > 0 && (
-        <div className="voice-speakers">
-          {others.map((p) => (
-            <span key={p.id} className="voice-chip" style={{ borderColor: p.color }}>🔊 {p.name}</span>
-          ))}
-        </div>
-      )}
-      <div className="voice-btns">
-        <button
-          className={`vbtn listen ${listen ? 'on' : 'off'}`}
-          aria-label={listen ? 'Stop listening to voice chat' : 'Listen to voice chat'}
-          aria-pressed={listen}
-          title={`Listen to the other players (${keyLabel(keys.listen)})`}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={() => void voice()?.toggleListen()}
-        >
-          <span className="vicon">{listen ? '🎧' : '🔕'}</span>
-          <small>{listen ? 'Listening' : 'Listen'}{!touch && <kbd>{keyLabel(keys.listen)}</kbd>}</small>
-        </button>
-        <button
-          className={`vbtn talk ${talking ? 'live' : micOn ? 'on' : ''}`}
-          aria-label={mode === 'push' ? 'Hold to talk' : micOn ? 'Turn microphone off' : 'Turn microphone on'}
-          aria-pressed={talking}
-          title={`${mode === 'push' ? 'Hold to talk' : 'Tap to turn your mic on / off'} (${keyLabel(keys.talk)})`}
-          {...talkProps}
-        >
-          <span className="vicon">{talking || micOn ? '🎙️' : '🎤'}</span>
-          <small>{talkLabel}{!touch && <kbd>{keyLabel(keys.talk)}</kbd>}</small>
-        </button>
-      </div>
-    </div>
   );
 }

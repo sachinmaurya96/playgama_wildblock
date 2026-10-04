@@ -6,7 +6,7 @@ import { blocksBullets, rayPlayers, spreadDirs, traceVoxels, type Vec } from './
 import { LootManager } from './LootManager';
 import { computeResult, pickMvp } from './MatchResults';
 import { DM_PROTOCOL, parseClientMsg, type ServerMsg } from './Protocol';
-import { GUNS, MAX_HP } from './WeaponDefinitions';
+import { GUNS, GUN_IDS, MAX_HP } from './WeaponDefinitions';
 import { Arsenal } from './WeaponSystem';
 import { cityBlueprint } from './DeathmatchMap';
 
@@ -374,7 +374,7 @@ describe('Deathmatch combat', () => {
     expect(h.last('bob', 'kill').w).toBe('m24');
   });
 
-  it('respawns after 5 s at the team spawn with 100 HP and only the sword', () => {
+  it('respawns after 5 s at the team spawn with 100 HP and a random loaded gun', () => {
     const h = duel();
     h.give('bob', 'ak47');
     h.give('host', 'm24');
@@ -387,7 +387,11 @@ describe('Deathmatch combat', () => {
     const bob = h.server.debugPlayer('bob')!;
     expect(bob.alive).toBe(true);
     expect(bob.hp).toBe(MAX_HP);
-    expect(bob.arsenal.guns).toEqual([null, null]);
+    const [gun, none] = bob.arsenal.guns;
+    expect(none).toBeNull();
+    expect(GUN_IDS).toContain(gun);
+    expect(bob.arsenal.mag(gun!)).toBe(GUNS[gun!].magazine);
+    expect(bob.arsenal.reserveFor(gun!)).toBe(GUNS[gun!].magazine);
     expect(bob.x).toBeGreaterThan(60);
     expect(bob.protUntil).toBeGreaterThan(h.t);
   });

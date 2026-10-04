@@ -2,7 +2,7 @@ import { DmServer } from '../game/deathmatch/DmServer';
 import { DM_PROTOCOL, parseServerMsg, type ClientMsg, type ServerMsg } from '../game/deathmatch/Protocol';
 import { useDeathmatchStore } from '../stores/deathmatchStore';
 import { useGameStore } from '../stores/gameStore';
-import { usePvpStore } from '../stores/pvpStore';
+import { useVoiceStore } from '../stores/voiceStore';
 import { VoiceChat } from './voice';
 import { DM_ROOM_PREFIX, hostLocal, hostOnline, joinLocal, joinOnline, makeRoomCode, normalizeCode, type NetMsg, type Transport } from './transport';
 
@@ -40,7 +40,7 @@ export class DmNet {
   private queue: ServerMsg[] = [];
   private timers: number[] = [];
   private closed = false;
-  /** Team voice chat (the PvP voice mesh, signalled through the host, teammates only). */
+  /** Voice chat (the shared voice mesh, signalled through the host) with team / all scopes. */
   voice: VoiceChat | null = null;
   /** Called by the launcher when the city should load (wired in app/launch). */
   onLaunch: (info: LaunchInfo) => void = () => {};
@@ -95,10 +95,14 @@ export class DmNet {
 
   // ---------------------------------------------------------------- team voice
 
-  /** Listening starts on its own (as in PvP); the mic is only asked for when the player talks. */
+  /**
+   * Listening starts on its own (as in PvP); the mic is only asked for when the player talks. Everyone in the
+   * room is linked; the scopes decide who is heard (my team / all players) and who hears you.
+   */
   private startVoice(): void {
     const v = new VoiceChat(this.selfId, (m) => this.voiceOut(m));
-    v.proximity = false; // team radio: every teammate at full volume, wherever they are
+    v.proximityAllowed = false; // team radio: everyone at full volume, wherever they are
+    v.useTeams((id) => useDeathmatchStore.getState().lobby?.players.find((p) => p.id === id)?.team);
     this.voice = v;
     let last = now();
     const here = { x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: -1 }, nowhere = new Map<string, { x: number; y: number; z: number }>();
@@ -106,18 +110,24 @@ export class DmNet {
       const t = now();
       v.update(t - last, here, nowhere);
       last = t;
-      // someone switched teams or left: hang up on them
-      for (const id of usePvpStore.getState().voicePeers) if (!this.teammate(id)) v.drop(id);
     }, 150));
+    // roster for the voice controls; team changes re-route who hears our mic
+    const sync = () => {
+      const players = useDeathmatchStore.getState().lobby?.players ?? [];
+      useVoiceStore.getState().set({ roster: players.map((p) => ({ id: p.id, name: p.name, color: p.team === 'red' ? '#ff6a5a' : '#5aa0ff', team: p.team })) });
+      // someone left the room: hang up on them
+      for (const id of useVoiceStore.getState().peers) if (!players.some((p) => p.id === id)) v.drop(id);
+      v.refreshTeams();
+    };
+    sync();
+    const off = useDeathmatchStore.subscribe((st, prev) => {
+      if (st.lobby?.players !== prev.lobby?.players) sync();
+    });
+    this.offVoice = off;
     v.autoStart();
   }
 
-  private teammate(id: string): boolean {
-    const players = useDeathmatchStore.getState().lobby?.players ?? [];
-    const me = players.find((p) => p.id === this.selfId);
-    const them = players.find((p) => p.id === id);
-    return !!me && !!them && me.team === them.team;
-  }
+  private offVoice: (() => void) | null = null;
 
   private voiceOut(m: NetMsg): void {
     if (this.closed) return;
@@ -137,19 +147,15 @@ export class DmNet {
     this.voiceIn(msg);
   }
 
-  /** Voice from the other team is ignored: voice is team-only. */
   private voiceIn(msg: NetMsg): void {
     const v = this.voice;
     const id = String(msg.id ?? '');
     if (!v || !id || id === this.selfId) return;
-    if (!this.teammate(id)) {
-      v.drop(id);
-      return;
-    }
     if (msg.t === 'v') {
       if (msg.to === this.selfId) void v.handleSignal(msg);
     } else v.handleState(msg);
   }
+
 
   private serverSend(to: string | null, msg: ServerMsg, except?: string): void {
     if (this.closed) return;
@@ -278,6 +284,7 @@ export class DmNet {
       this.transport.send({ t: 'closed', reason: 'The host closed the room.' });
     }
     this.closed = true;
+    this.offVoice?.();
     this.voice?.dispose();
     this.voice = null;
     for (const t of this.timers) clearInterval(t);

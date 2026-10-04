@@ -58,6 +58,8 @@ class DmRemote {
   prot = false;
   swing = 0;
   fireKick = 0;
+  /** When this player last fired (enemies show on the radar for a moment after a shot). */
+  firedAt = 0;
   private buf: Snap[] = [];
   private gunObj: THREE.Group | null = null;
   private gunId: WeaponId | null = null;
@@ -138,6 +140,7 @@ class DmRemote {
   }
 
   fired(): void {
+    this.firedAt = performance.now();
     this.fireKick = 1;
     this.flashT = 0.06;
   }
@@ -410,7 +413,7 @@ export class DeathmatchSession {
         st.set({ phase: 'playing', notice: 'FIGHT!' });
         playDm('fight');
         setTimeout(() => useDeathmatchStore.getState().notice === 'FIGHT!' && useDeathmatchStore.getState().set({ notice: null }), 1400);
-        if (useGameStore.getState().overlay === null) this.game.input.requestLock();
+        if (useGameStore.getState().overlay === null && !useDeathmatchStore.getState().optionsOpen) this.game.input.requestLock();
         return;
       case 'ss': {
         const t = performance.now();
@@ -527,7 +530,7 @@ export class DeathmatchSession {
           this.gunView.setGun(null);
           this.game.ensureSafePosition();
           st.set({ alive: true, hp: MAX_HP, killedBy: null, respawnIn: 0 });
-          if (useGameStore.getState().overlay === null) this.game.input.requestLock();
+          if (useGameStore.getState().overlay === null && !useDeathmatchStore.getState().optionsOpen) this.game.input.requestLock();
         } else {
           const r = this.remotes.get(m.id);
           if (r) {
@@ -715,6 +718,17 @@ export class DeathmatchSession {
     }
   }
 
+  /** Radar: every living player, near or far — teammates green, opponents red. */
+  radarBlips(): { name: string; color: string; x: number; y: number; z: number }[] {
+    const out: { name: string; color: string; x: number; y: number; z: number }[] = [];
+    for (const r of this.remotes.values()) {
+      if (!r.alive) continue;
+      const mate = r.team === this.team;
+      out.push({ name: r.name, color: mate ? '#3ddc5a' : '#ff3b30', x: r.pos.x, y: r.pos.y, z: r.pos.z });
+    }
+    return out;
+  }
+
   toggleScoreboard(): void {
     const st = useDeathmatchStore.getState();
     st.set({ scoreboardOpen: !st.scoreboardOpen });
@@ -866,8 +880,9 @@ export class DeathmatchSession {
       if (inp.keyPressed('KeyR')) this.reload();
       if (inp.keyPressed('Digit4')) this.heal('small');
       if (inp.keyPressed('Digit5')) this.heal('large');
-      if (inp.keyPressed('KeyE') || inp.wasPressed('interact') || inp.touch.interactPressed) this.pickUp();
-      const held = inp.mouseLeft || inp.touch.breakHeld;
+      if (inp.keyPressed('KeyE') || inp.touch.interactPressed) this.pickUp();
+      // desktop: left click or F fires
+      const held = inp.mouseLeft || inp.keyDown('KeyF') || inp.touch.breakHeld;
       const pressed = held && !this.wasHeld;
       this.wasHeld = held;
       if (gun) {
@@ -883,7 +898,7 @@ export class DeathmatchSession {
           }
         }
       } else if (held) this.swingSword();
-    } else this.wasHeld = inp.mouseLeft || inp.touch.breakHeld;
+    } else this.wasHeld = inp.mouseLeft || inp.keyDown('KeyF') || inp.touch.breakHeld;
 
     // pickups: ammo & medkits are collected by walking over them, guns with E / ✋
     let prompt: string | null = null;

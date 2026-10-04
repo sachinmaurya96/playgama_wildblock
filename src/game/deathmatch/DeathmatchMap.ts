@@ -31,7 +31,8 @@ import { localIndex } from '../world/coordinates';
  *        shop strip · container yard │ RESIDENTIAL(E)│ shop strip · container yard
  *        back alley ─────────────────────────────────────────────
  *
- * Elevated positions (F): apartment rooftops, warehouse mezzanine, container tops.
+ * Elevated positions (F): apartment rooftops, cafe / bank / shop-strip roofs (outside
+ * staircases), warehouse mezzanine, container tops.
  * Boundary: a ring of tall buildings with road blocks where the streets end.
  */
 
@@ -372,6 +373,9 @@ function buildSide(b: Builder, red: boolean): void {
   b.fill(-45, G + 1, -16, -43, G + 1, -15, A('floor_walnut')); // tables
   b.fill(-40, G + 1, -16, -38, G + 1, -15, A('floor_walnut'));
   b.fill(-47, G + 6, -9, -36, G + 6, -9, SLAB(accent));
+  // outside staircase up to the cafe roof (north side, climbing east)
+  b.stairs(-46, -20, 5, 'east', 'concrete_gray');
+  b.fill(-46, G + 2, -21, -42, G + 6, -21, (x, y) => (y === G + 2 + (x + 46) ? RAIL('metal_black', 2) : -1));
   const bank = A(palette[3]);
   b.lot(-50, 7, -27, 19, SIDEWALK);
   b.building(-47, 8, -36, 17, 5, bank, { trim: A('stone_cut'), glass: GLASS(3), storey: 5, interior: true });
@@ -380,6 +384,9 @@ function buildSide(b: Builder, red: boolean): void {
   b.clear(-36, G + 1, 12, -36, G + 3, 13);
   b.fill(-45, G + 1, 14, -38, G + 1, 14, A('marble')); // bank counter
   for (const x of [-46, -37]) b.fill(x, G + 1, 7, x, G + 5, 7, COLUMN('stone_cut'));
+  // outside staircase up to the bank roof (south side, climbing east)
+  b.stairs(-46, 18, 5, 'east', 'concrete_gray');
+  b.parapet(-47, 8, -36, 17, 5, WALL_LOW('stone_cut'), (x, z) => z === 17 && x >= -43 && x <= -41);
   // small park between the shops and the street, connector street with a parked van
   b.ground(-34, -19, -28, -10, B.GRASS);
   b.ground(-34, 9, -28, 18, B.GRASS);
@@ -413,6 +420,8 @@ function buildSide(b: Builder, red: boolean): void {
     b.fill(x0, G + 4, 44, x1, G + 4, 44, SLAB(accent, true)); // awning
     b.fill(x0 + 1, G + 1, 50, x0 + 2, G + 2, 50, A('wood_cladding_dark')); // shelves
   }
+  // single-file staircase behind the shops up onto their roofs
+  b.stairs(-35, 53, 5, 'east', 'concrete_gray', 1);
   b.ground(-50, 54, -27, 69, A('gravel'));
   b.container(-49, 56, true, red ? 'paint_terracotta' : 'paint_navy');
   b.container(-49, 56, true, red ? 'barn_red' : 'paint_blue', G + 4);
