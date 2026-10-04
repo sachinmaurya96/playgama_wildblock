@@ -17,6 +17,8 @@ import { FatalScreen } from './ErrorBoundary';
 import { RotateHint } from '../ui/Touch/RotateHint';
 import { inviteCodeFromUrl, PvpScreen } from '../ui/MainMenu/PvpScreen';
 import { pvpNet } from '../net/pvpNet';
+import { dmInviteFromUrl, dmNet } from '../net/deathmatchNet';
+import { DeathmatchScreen } from '../ui/Deathmatch/DeathmatchScreen';
 
 // The 3D engine (three.js + R3F) loads only when a world starts: menus appear instantly.
 const GameView = lazy(() => import('./GameView'));
@@ -31,7 +33,7 @@ export function App() {
   }, [uiScale]);
 
   useEffect(() => {
-    if (useGameStore.getState().screen === 'boot') useGameStore.getState().setScreen(inviteCodeFromUrl() ? 'pvp' : 'menu');
+    if (useGameStore.getState().screen === 'boot') useGameStore.getState().setScreen(dmInviteFromUrl() ? 'deathmatch' : inviteCodeFromUrl() ? 'pvp' : 'menu');
     // unlock audio on the first interaction anywhere
     const unlock = () => {
       audio.init();
@@ -45,7 +47,7 @@ export function App() {
       if (paused) {
         audio.suspend();
         // PvP keeps running in the background (the match doesn't stop for one player)
-        if (g && !g.pvp && useGameStore.getState().screen === 'playing') {
+        if (g && !g.pvp && !g.dm && useGameStore.getState().screen === 'playing') {
           void g.saveNow('hidden');
           if (useGameStore.getState().overlay === null) g.openOverlay('pause');
         }
@@ -53,6 +55,7 @@ export function App() {
     });
     const beforeUnload = () => {
       pvpNet.current?.close(); // tell the other players right away
+      dmNet.current?.close();
       void gameRegistry.current?.saveNow('hidden');
     };
     window.addEventListener('pagehide', beforeUnload);
@@ -82,6 +85,7 @@ export function App() {
       {screen === 'howto' && <HowToPlay />}
       {screen === 'credits' && <Credits />}
       {screen === 'pvp' && <PvpScreen />}
+      {screen === 'deathmatch' && <DeathmatchScreen />}
       {!inGame && <Toasts />}
       <RotateHint />
     </div>

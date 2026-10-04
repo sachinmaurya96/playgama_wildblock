@@ -16,6 +16,7 @@ Everything you see and hear is **generated in code**: block textures, item icons
 4. [What's in the game](#whats-in-the-game)
 5. [Build Home](#build-home)
 5b. [PvP Mode (free peer-to-peer multiplayer)](#pvp-mode-free-peer-to-peer-multiplayer)
+5c. [Deathmatch — Team Battle](#deathmatch--team-battle)
 6. [Architecture](#architecture)
 7. [World system](#world-system)
 8. [Save system](#save-system)
@@ -181,6 +182,42 @@ Main menu → **🎮 PvP Mode**. One player hosts (picks **⚔️ Battle** or **
 * **Rules**: same kit for everyone, refilled on every respawn (5 s, random spawn around the arena, 3 s spawn protection); PvP hits do ×1.35 damage; no items are lost and nothing is saved.
 * **Hosting it yourself (optional)**: very strict networks (some schools/offices, symmetric NAT on mobile carriers) block direct connections. Add a TURN relay with env vars at build time: `VITE_TURN_URL=turn:host:3478` (comma-separate several), `VITE_TURN_USER`, `VITE_TURN_PASS`. To use your own PeerJS signalling server instead of the free cloud: `VITE_PEER_HOST`, `VITE_PEER_PORT`, `VITE_PEER_PATH`, `VITE_PEER_SECURE`.
 * **Testing on one computer**: in the PvP screen open *Connection → This device*, host in one tab and join from a second tab of the same browser.
+
+## Deathmatch — Team Battle
+
+Room-based Red vs Blue combat in **City Clash**, a compact voxel city (152 × 152 playable blocks) built for 1v1 up to 4v4.
+
+**Flow:** Main menu → *Deathmatch — Team Battle* → **Create Room** (pick 5 / 8 / 10 / 12 minutes) or **Join Room** with the 6-character code or an invite link (`?dm=CODE`; PvP's `?pvp=CODE` links are unaffected). In the lobby the host starts on Red and joiners are auto-balanced; switch teams by **double-clicking / double-tapping an empty slot** in the other team or with **⇄ Switch**. The host's **Start Match** needs at least one player per team. Teams then lock, everyone loads the city, and a host-timed 10-second countdown ends with **FIGHT!**. Everyone spawns with a sword; guns, ammo and medkits lie around the city (rare ones in the neutral centre). Eliminated players drop their guns and respawn after 5 s with 3 s of spawn protection (ends early if you attack). The team with more eliminations at the buzzer wins (a tie is a draw); the top killer is MVP (fewer deaths breaks ties, otherwise joint MVP). The host can **Play Again** (back to the lobby, everything reset).
+
+| Desktop | Action |
+|---|---|
+| Left mouse | Fire (hold for automatics) / swing sword |
+| Right mouse (hold) | Aim down sights — M24 uses its 4× scope |
+| R | Reload |
+| 1 / 2 / 3, wheel, Q | Sword / gun slots / last weapon |
+| 4 / 5 | Small medkit (+30) / large medkit (+65, 2 s, interrupted by damage or firing) |
+| E | Pick up a gun (ammo & medkits are collected by walking over them) |
+| Tab (hold) | Scoreboard |
+| Esc | Menu (the match keeps running) |
+
+Touch: joystick left, drag right side to look, 🔥 fire, 🎯 aim toggle, R reload, ⇄ switch weapon, ✋ pick up, 🩹 medkit, ⤒ jump, ⤓ crouch, 🏆 scoreboard. Two health stations (north & south of the plaza) heal 20 HP with a 20 s cooldown.
+
+| Weapon | Damage | Mag | Rate | Ammo |
+|---|---:|---:|---|---|
+| M416 | 19 | 30 | 11/s auto | 5.56mm |
+| AK-47 | 26 | 30 | 8/s auto | 7.62mm |
+| MP5 | 15 | 35 | 14/s auto | 9mm |
+| Pump Shotgun | 9 × 8 pellets | 6 | 1/s | 12 Gauge |
+| M24 Sniper | 80 | 5 | bolt (~0.9/s) | 7.62mm |
+| Sword | 25 | — | 0.55 s | — |
+
+Headshots multiply damage (×1.6 rifles, ×2 sniper); damage falls off with distance. Friendly fire is off. All numbers live in `src/game/deathmatch/WeaponDefinitions.ts`.
+
+**Networking.** Same free PeerJS / WebRTC star as PvP (optional `VITE_TURN_*` relay for strict networks; a paid TURN service is the only possible running cost), in its own room namespace. The host runs an authoritative referee (`DmServer`) on a timer, independent of rendering: clients send inputs (movement, fire direction, pickup / heal requests), and the host validates phase, round, cooldowns, ammo, distance and movement speed, traces bullets against the map blueprint (walls stop bullets; glass, leaves and fences don't) with bounded lag compensation (≤ 300 ms), and owns health, eliminations, scores, loot and the match deadline. A dropped player can reconnect into the running match with their score; other joins are refused once preparation starts ("Match in progress"). If the host leaves, everyone gets a clear message and returns to the Deathmatch menu. Like any peer-hosted game this is fair for casual play but not cheat-proof (the host could cheat).
+
+**Testing with two or more devices:** Device 1 → Deathmatch → Create Room → share the code / Invite link. Device 2 opens the link (or enters the code) → Join Room. For a single computer, open *Connection → Same device* in two tabs of one browser. Automated coverage: `src/game/deathmatch/*.test.ts` (lobby rules, combat, results, network edge cases, map walkability).
+
+**Code:** `src/game/deathmatch/` (map blueprint, rules, referee, weapons, hit detection, loot, spawns, protocol, client session, gun models / view model / audio), `src/net/deathmatchNet.ts`, `src/stores/deathmatchStore.ts`, `src/ui/Deathmatch/`, `src/styles/deathmatch.css`.
 
 ## Architecture
 

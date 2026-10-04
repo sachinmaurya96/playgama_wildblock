@@ -8,6 +8,7 @@ import { useGameStore } from './stores/gameStore';
 import './styles/global.css';
 import './styles/ui.css';
 import './styles/build.css';
+import './styles/deathmatch.css';
 
 // Last-resort error reporting: never leave the player staring at a blank screen.
 window.addEventListener('error', (e) => {

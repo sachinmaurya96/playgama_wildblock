@@ -27,6 +27,9 @@ import { EntityManager } from './entities/EntityManager';
 import { Projectiles } from './entities/Projectiles';
 import { CombatFX } from './rendering/CombatFX';
 import { PvpSession } from './pvp/PvpSession';
+import { DeathmatchSession } from './deathmatch/DeathmatchSession';
+import { CITY_G } from './deathmatch/DeathmatchMap';
+import { dmNet } from '../net/deathmatchNet';
 import { Player } from './player/Player';
 import { PlayerInteraction } from './player/PlayerInteraction';
 import { BlockOutline } from './rendering/Overlays';
@@ -97,6 +100,8 @@ export class Game {
   readonly fx = new CombatFX();
   /** PvP match (mode 'pvp'): other players, hits, scores. */
   pvp: PvpSession | null = null;
+  /** Deathmatch match (mode 'deathmatch'): team battle in City Clash. */
+  dm: DeathmatchSession | null = null;
   readonly trees: TreeFelling;
   readonly farming = new FarmingSystem();
   readonly containers = new ContainerSystem();
@@ -146,7 +151,7 @@ export class Game {
     this.camera = init.camera;
     this.meta = init.meta;
     this.isBuild = init.meta.mode === 'build';
-    this.difficulty = this.isBuild ? 'peaceful' : init.meta.mode === 'pvp' ? 'explorer' : init.meta.difficulty;
+    this.difficulty = this.isBuild ? 'peaceful' : init.meta.mode === 'pvp' || init.meta.mode === 'deathmatch' ? 'explorer' : init.meta.difficulty;
     this.peacefulCreatures = init.meta.peacefulCreatures;
     if (!sharedAssets) sharedAssets = new AssetManager();
     this.assets = sharedAssets;
@@ -158,7 +163,7 @@ export class Game {
     this.camera.fov = settings.graphics.fov;
     this.camera.updateProjectionMatrix();
 
-    this.world = new World(init.meta.seed, this.isBuild ? init.meta.build?.plot ?? 'meadow' : init.meta.mode === 'pvp' ? init.meta.arena ?? null : null, init.meta.caves ?? 1);
+    this.world = new World(init.meta.seed, this.isBuild ? init.meta.build?.plot ?? 'meadow' : init.meta.mode === 'pvp' ? init.meta.arena ?? null : null, init.meta.caves ?? 1, init.meta.mode === 'deathmatch');
     for (const [k, list] of init.mods) this.world.loadMods(k, list);
     this.pool = new WorkerPool();
     this.chunks = new ChunkManager(this.world, this.pool, this.assets.materials, settings.graphics.renderDistance);
@@ -221,6 +226,10 @@ export class Game {
       this.pvp = new PvpSession(this);
       this.arrows.hitRemote = (_from, to, a) => this.pvp!.arrowHit(to, a.damage);
     }
+    if (init.meta.mode === 'deathmatch') {
+      this.progress.dispose(); // no quests / journal in a match
+      this.dm = new DeathmatchSession(this);
+    }
     Game.current = this;
     gameRegistry.current = this;
     // Handy for debugging / automated play-tests: window.wildblocks.game
@@ -263,6 +272,7 @@ export class Game {
       }
       return;
     }
+    if (this.dm) return this.startDeathmatch(onProgress);
     if (this.pvp) return this.startPvp(onProgress);
     const ws = useWorldStore.getState();
     const inv = useInventoryStore.getState();
@@ -374,6 +384,54 @@ export class Game {
       }
       const gs = useGameStore.getState();
       if (gs.screen === 'playing' && gs.overlay === null && !this.player.dead) this.openOverlay('pause');
+    };
+  }
+
+  /** Deathmatch start: City Clash from the room seed, fixed daylight, the host-assigned spawn point. */
+  private async startDeathmatch(onProgress: (p: number, stage: string) => void): Promise<void> {
+    const dm = this.dm!;
+    onProgress(0.22, 'Entering City Clash');
+    useWorldStore.getState().reset({ x: 0, y: CITY_G + 1, z: 0 });
+    useInventoryStore.getState().reset();
+    this.env.setWeather('clear', 1e9);
+    this.env.cover = 0.25;
+    this.env.rain = 0;
+    // late morning light, locked for the whole match
+    const c = this.clock;
+    let d = 0.4 - c.dayFraction;
+    d -= Math.floor(d);
+    c.time += d * c.dayLength;
+    const sp = dmNet.current?.launch?.spawn;
+    const [x, y, z, yaw] = sp ?? [dm.team === 'red' ? -70 : 70, CITY_G + 1, 0, dm.team === 'red' ? -Math.PI / 2 : Math.PI / 2];
+    this.player.teleport(x, y + 0.05, z);
+    this.player.yaw = yaw;
+    this.player.pitch = 0;
+    this.player.cameraMode = 'first';
+    const needed = Math.max(3, Math.min(4, this.chunks.renderRadius));
+    const t0 = performance.now();
+    await new Promise<void>((resolve) => {
+      const tick = () => {
+        if (this.disposed) return resolve();
+        this.chunks.update(0.05, this.player.position.x, this.player.position.z, this.player.lookDirection(), new THREE.Vector3());
+        const r = this.chunks.readiness(needed);
+        onProgress(0.25 + r * 0.7, 'Building the city');
+        if (r >= 1 || performance.now() - t0 > 25000) resolve();
+        else setTimeout(tick, 30);
+      };
+      tick();
+    });
+    if (this.disposed) return;
+    this.ensureSafePosition();
+    onProgress(1, 'Ready');
+    this.ready = true;
+    dm.begin();
+    this.input.onLockLost = () => {
+      if (this.suppressPause) {
+        this.suppressPause = false;
+        return;
+      }
+      const gs = useGameStore.getState();
+      if (gs.screen === 'playing' && gs.overlay === null) this.openOverlay('pause');
     };
   }
 
@@ -576,6 +634,13 @@ export class Game {
       if (inp.wasPressed('hideHud') && o === null) useGameStore.setState({ hudHidden: !gs.hudHidden });
       return;
     }
+    if (this.dm) {
+      // Deathmatch: no backpack / journal / map — Esc pauses, F3 debug, hide HUD
+      if (inp.keyPressed('F3')) useSettingsStore.getState().update('gameplay', { showDebug: !useSettingsStore.getState().gameplay.showDebug });
+      if (inp.wasPressed('hideHud') && o === null) useGameStore.setState({ hudHidden: !gs.hudHidden });
+      if (inp.keyPressed('Escape') && o !== null && o !== 'pause') this.closeOverlay();
+      return;
+    }
     if (inp.wasPressed('inventory')) {
       if (o === null) {
         this.audio.play('open');
@@ -654,6 +719,23 @@ export class Game {
       this.input.endFrame();
       return;
     }
+    if (this.dm) {
+      // Deathmatch: no block editing, creatures, crops or saving — the session runs the match
+      this.dm.update(dt, simulate && !this.player.waitingForGround);
+      this.fx.update(dt);
+      this.env.update(dt, false);
+      this.chunks.update(dt, this.player.position.x, this.player.position.z, this.player.lookDirection(), this.player.body.vel);
+      this.player.updateCamera(this.camera, dt);
+      this.sky.follow(this.camera);
+      this.clouds.update(dt, this.camera, this.env.cover);
+      this.particles.update(dt, this.time);
+      this.updateAmbience(dt, !simulate);
+      this.updateViewModel(dt, gs.hudHidden);
+      this.monitorPerformance(rawDt);
+      this.updateDebug(dt);
+      this.input.endFrame();
+      return;
+    }
     this.boats.update(dt, simulate && !this.player.waitingForGround);
     this.interaction.update(dt, simulate && !this.player.waitingForGround);
     this.arrows.update(dt);
@@ -694,6 +776,10 @@ export class Game {
       const bs = useBuildStore.getState();
       hideHand = bs.camera === 'build' || bs.photo || bs.cursorMode;
       this.viewModel.setHeld(this.build.heldSpec());
+    } else if (this.dm) {
+      // the sword uses the classic first-person hand; guns have their own view model
+      hideHand = this.dm.weapon !== 'sword';
+      this.viewModel.setHeld(hideHand ? null : { item: 'copper_sword', key: 'dm-sword' });
     } else {
       const held = useInventoryStore.getState().selectedStack();
       this.viewModel.setHeld(held ? { item: held.item, key: held.item } : null);
@@ -722,6 +808,13 @@ export class Game {
       r.autoClear = false;
       r.clearDepth();
       r.render(this.viewModel.scene, this.viewModel.camera);
+      r.autoClear = true;
+    }
+    const gv = this.dm?.gunView;
+    if (gv && gv.scene.visible) {
+      r.autoClear = false;
+      r.clearDepth();
+      r.render(gv.scene, gv.camera);
       r.autoClear = true;
     }
     if (this.captureThumb) {
@@ -997,6 +1090,7 @@ export class Game {
 
   onPlayerDeath(cause: string): void {
     if (this.boats.riding) this.boats.dismount();
+    if (this.dm) return; // the host referee owns Deathmatch deaths
     if (this.pvp?.onLocalDeath(cause)) return;
     const inv = useInventoryStore.getState();
     const p = this.player.position;
@@ -1079,7 +1173,7 @@ export class Game {
 
   async saveNow(reason: 'auto' | 'pause' | 'quit' | 'sleep' | 'created' | 'hidden' | 'quiet'): Promise<void> {
     // matches aren't saved; a Build Home you opened to friends keeps saving (your own project)
-    if (!this.ready || this.saving || (this.pvp && this.meta.coop !== 'host')) return;
+    if (!this.ready || this.saving || this.dm || (this.pvp && this.meta.coop !== 'host')) return;
     this.saving = true;
     try {
       // keep an open chest's live contents
@@ -1198,6 +1292,8 @@ export class Game {
     this.fx.clear();
     this.pvp?.dispose();
     this.pvp = null;
+    this.dm?.dispose();
+    this.dm = null;
     this.trees.clear();
     this.particles.dispose();
     this.rain.dispose();

@@ -236,7 +236,7 @@ export class AudioManager {
     src.start(t, Math.random() * 1.5, dur + 0.05);
   }
 
-  private tone(out: AudioNode, t: number, freq: number, dur: number, type: OscillatorType, gain: number, freqEnd?: number, attack = 0.005) {
+  tone(out: AudioNode, t: number, freq: number, dur: number, type: OscillatorType, gain: number, freqEnd?: number, attack = 0.005) {
     const ctx = this.ctx!;
     const o = ctx.createOscillator();
     o.type = type;
@@ -428,6 +428,21 @@ export class AudioManager {
         break;
       case 'poof': this.noiseBurst(out, t, 0.35, 'bandpass', 1200, 0.8, 0.25, this.noise, 300); break;
     }
+  }
+
+  /**
+   * A custom procedural sound on the SFX (or UI) bus, positioned like every other
+   * sound (stereo pan + distance falloff). Used by Deathmatch for weapons.
+   */
+  custom(build: (s: { t: number; out: AudioNode; tone: AudioManager['tone']; noise: (out: AudioNode, t: number, dur: number, type: BiquadFilterType, freq: number, q: number, gain: number, brown?: boolean, freqEnd?: number) => void }) => void, opts: { pos?: THREE.Vector3; volume?: number; maxDist?: number; ui?: boolean } = {}): void {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const out = this.spatial(opts.ui ? 'ui' : 'sfx', opts.pos, opts.volume ?? 1, opts.maxDist ?? 34);
+    if (!out) return;
+    build({
+      t: this.ctx.currentTime + 0.005, out,
+      tone: (o, t, f, d, ty, g, fe, at) => this.tone(o, t, f, d, ty, g, fe, at),
+      noise: (o, t, d, ty, f, q, g, brown, fe) => this.noiseBurst(o, t, d, ty, f, q, g, brown ? this.brown : this.noise, fe),
+    });
   }
 
   creature(kind: CreatureKind, what: 'idle' | 'hurt' | 'happy' | 'attack', pos: THREE.Vector3): void {

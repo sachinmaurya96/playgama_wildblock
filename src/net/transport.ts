@@ -29,6 +29,8 @@ export interface Transport {
 }
 
 const ROOM_PREFIX = 'wildblocks-pvp-v1-';
+/** Deathmatch rooms live in their own namespace: a PvP code never reaches a Deathmatch room (and vice versa). */
+export const DM_ROOM_PREFIX = 'wildblocks-dm-v1-';
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O/1/I/L confusion
 
 export function makeRoomCode(): string {
@@ -200,10 +202,10 @@ function withTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T> {
   });
 }
 
-export async function hostOnline(code: string): Promise<Transport> {
+export async function hostOnline(code: string, prefix = ROOM_PREFIX): Promise<Transport> {
   if (typeof RTCPeerConnection === 'undefined') throw new Error(friendlyPeerError('browser-incompatible'));
   const Peer = await loadPeer();
-  const peer = new Peer(ROOM_PREFIX + code, { ...peerServerOptions(), config: { iceServers: iceServers() }, debug: 0 });
+  const peer = new Peer(prefix + code, { ...peerServerOptions(), config: { iceServers: iceServers() }, debug: 0 });
   await withTimeout(
     new Promise<void>((resolve, reject) => {
       peer.once('open', () => resolve());
@@ -223,7 +225,7 @@ export async function hostOnline(code: string): Promise<Transport> {
   return t;
 }
 
-export async function joinOnline(code: string): Promise<Transport> {
+export async function joinOnline(code: string, prefix = ROOM_PREFIX): Promise<Transport> {
   if (typeof RTCPeerConnection === 'undefined') throw new Error(friendlyPeerError('browser-incompatible'));
   const Peer = await loadPeer();
   const peer = new Peer({ ...peerServerOptions(), config: { iceServers: iceServers() }, debug: 0 });
@@ -236,7 +238,7 @@ export async function joinOnline(code: string): Promise<Transport> {
       15000,
       friendlyPeerError('network'),
     );
-    const conn = peer.connect(ROOM_PREFIX + code, { reliable: true, serialization: 'json' });
+    const conn = peer.connect(prefix + code, { reliable: true, serialization: 'json' });
     await withTimeout(
       new Promise<void>((resolve, reject) => {
         conn.once('open', () => resolve());
@@ -267,9 +269,9 @@ class LocalTransport implements Transport {
   private timer: number;
   private closed = false;
 
-  constructor(code: string, readonly isHost: boolean) {
+  constructor(code: string, readonly isHost: boolean, prefix = ROOM_PREFIX) {
     this.selfId = (isHost ? 'host-' : 'p-') + Math.random().toString(36).slice(2, 9);
-    this.bc = new BroadcastChannel(ROOM_PREFIX + code);
+    this.bc = new BroadcastChannel(prefix + code);
     this.bc.onmessage = (e: MessageEvent) => this.receive(e.data as { from: string; to?: string; kind: string; msg?: NetMsg });
     this.timer = window.setInterval(() => this.heartbeat(), 1000);
   }
@@ -360,14 +362,14 @@ class LocalTransport implements Transport {
   }
 }
 
-export async function hostLocal(code: string): Promise<Transport> {
+export async function hostLocal(code: string, prefix = ROOM_PREFIX): Promise<Transport> {
   if (typeof BroadcastChannel === 'undefined') throw new Error('This browser cannot run two-tab games.');
-  return new LocalTransport(code, true);
+  return new LocalTransport(code, true, prefix);
 }
 
-export async function joinLocal(code: string): Promise<Transport> {
+export async function joinLocal(code: string, prefix = ROOM_PREFIX): Promise<Transport> {
   if (typeof BroadcastChannel === 'undefined') throw new Error('This browser cannot run two-tab games.');
-  const t = new LocalTransport(code, false);
+  const t = new LocalTransport(code, false, prefix);
   try {
     await t.connect();
   } catch (e) {

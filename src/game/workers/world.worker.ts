@@ -4,6 +4,7 @@ import { meshChunk, meshTransferables } from '../world/ChunkMesher';
 import { TerrainSampler } from '../world/TerrainSampler';
 import { generatePlotChunk, PlotSampler } from '../world/PlotGenerator';
 import type { WorkerRequest } from './protocol';
+import { cityBlueprint } from '../deathmatch/DeathmatchMap';
 
 /**
  * Terrain generation + chunk meshing worker. Several of these run in a pool
@@ -17,7 +18,8 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
   try {
     if (msg.type === 'gen') {
       let r;
-      if (msg.plot) {
+      if (msg.city) r = cityBlueprint(msg.seed).generateChunk(msg.cx, msg.cz);
+      else if (msg.plot) {
         if (!plotSampler || plotSampler.seed !== msg.seed >>> 0 || plotSampler.plot !== msg.plot) plotSampler = new PlotSampler(msg.seed, msg.plot);
         r = generatePlotChunk(msg.cx, msg.cz, plotSampler);
       } else {

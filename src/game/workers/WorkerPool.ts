@@ -2,6 +2,7 @@ import { generateChunk } from '../world/ChunkGenerator';
 import { meshChunk } from '../world/ChunkMesher';
 import { TerrainSampler } from '../world/TerrainSampler';
 import { generatePlotChunk, PlotSampler } from '../world/PlotGenerator';
+import { cityBlueprint } from '../deathmatch/DeathmatchMap';
 import type { GenRequest, MeshRequest, WorkerRequest, WorkerResponse } from './protocol';
 
 type JobInput = Omit<GenRequest, 'id'> | Omit<MeshRequest, 'id'>;
@@ -152,7 +153,8 @@ export class WorkerPool {
         if (!job) return;
         try {
           const r = job.req;
-          if (r.type === 'gen' && r.plot) {
+          if (r.type === 'gen' && r.city) job.resolve(cityBlueprint(r.seed).generateChunk(r.cx, r.cz));
+          else if (r.type === 'gen' && r.plot) {
             if (!this.fallbackPlot || this.fallbackPlot.seed !== r.seed >>> 0 || this.fallbackPlot.plot !== r.plot) this.fallbackPlot = new PlotSampler(r.seed, r.plot);
             job.resolve(generatePlotChunk(r.cx, r.cz, this.fallbackPlot));
           } else if (r.type === 'gen') {

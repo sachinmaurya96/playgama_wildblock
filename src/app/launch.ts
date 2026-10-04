@@ -91,3 +91,21 @@ export function launchPvp(session: NetSession, mods: Map<number, [number, number
   useGameStore.setState({ loading: { progress: 0, stage: 'Entering the arena...', tipIndex: Math.floor(Math.random() * 1000) }, death: null, hudHidden: false, overlay: null });
   gs.setScreen('loading');
 }
+
+/**
+ * Deathmatch: load City Clash for the current room round (nothing is saved).
+ * Called by net/deathmatchNet when the host starts the match.
+ */
+export function launchDeathmatch(info: { round: number; seed: number }): void {
+  audio.init();
+  const meta: WorldMeta = {
+    id: `dm-${info.round}-${Date.now().toString(36)}`, name: 'City Clash', seed: info.seed >>> 0, seedText: `city-${info.seed}`,
+    difficulty: 'explorer', peacefulCreatures: true, createdAt: Date.now(), lastPlayed: Date.now(), playTime: 0, saveVersion: SAVE_VERSION,
+    mode: 'deathmatch', caves: 1,
+  };
+  pending = { meta, state: null, mods: new Map() };
+  const gs = useGameStore.getState();
+  gs.setWorld({ id: meta.id, name: meta.name, seed: meta.seedText, difficulty: 'explorer', mode: 'deathmatch' });
+  useGameStore.setState({ loading: { progress: 0, stage: 'Loading City Clash...', tipIndex: Math.floor(Math.random() * 1000) }, death: null, hudHidden: false, overlay: null });
+  gs.setScreen('loading');
+}
