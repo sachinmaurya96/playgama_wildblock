@@ -7,6 +7,8 @@ import { BUILD_CONTROLS } from '../../data/buildControls';
 import { useBuildStore } from '../../stores/buildStore';
 import { usePvpStore } from '../../stores/pvpStore';
 import { copyInvite } from '../HUD/PvpHud';
+import { dmNet } from '../../net/deathmatchNet';
+import { useDeathmatchStore } from '../../stores/deathmatchStore';
 
 export function PauseMenu() {
   const world = useGameStore((s) => s.world);
@@ -23,6 +25,8 @@ export function PauseMenu() {
   };
 
   if (controls) return <ControlsCard onBack={() => setControls(false)} build={world?.mode === 'build'} />;
+
+  if (world?.mode === 'deathmatch') return <DeathmatchPause resume={resume} />;
 
   if (world?.mode === 'pvp') return <PvpPause resume={resume} onControls={() => setControls(true)} />;
 
@@ -145,6 +149,31 @@ export function ControlsCard({ onBack, build = false }: { onBack: () => void; bu
         </div>
         <p className="muted">Rebind keys in Settings → Controls.</p>
         <button className="btn primary" onClick={onBack}>Back</button>
+      </div>
+    </div>
+  );
+}
+
+/** Deathmatch: the match keeps running while this is open. */
+function DeathmatchPause({ resume }: { resume: () => void }) {
+  const code = useDeathmatchStore((s) => s.code);
+  const isHost = useDeathmatchStore((s) => s.isHost);
+  const leave = () => {
+    dmNet.leave();
+    useGameStore.setState({ overlay: null });
+    useGameStore.getState().setScreen('menu');
+  };
+  return (
+    <div className="modal-backdrop">
+      <div className="panel pause-panel">
+        <button className="close-x" onClick={resume} aria-label="Resume">✕</button>
+        <h2 className="panel-title">⚔️ Deathmatch</h2>
+        <p className="muted">Room {code} · the match keeps going while you're here!</p>
+        <div className="menu-buttons">
+          <button className="btn primary" onClick={resume} autoFocus>Back to the fight</button>
+          <button className="btn" onClick={() => useGameStore.getState().setOverlay('settings')}>Settings</button>
+          <button className="btn danger" onClick={leave}>{isHost ? 'Close room (ends the match for everyone)' : 'Leave room'}</button>
+        </div>
       </div>
     </div>
   );

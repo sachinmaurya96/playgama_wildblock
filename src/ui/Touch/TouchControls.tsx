@@ -7,6 +7,7 @@ import { hasItem, itemDef } from '../../data/items';
 import { useGameStore } from '../../stores/gameStore';
 import { usePlayerStore } from '../../stores/playerStore';
 import { usePvpStore } from '../../stores/pvpStore';
+import { useDeathmatchStore } from '../../stores/deathmatchStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 
 /** Hold this long without moving on the open screen = break / keep placing. */
@@ -35,6 +36,8 @@ export function TouchControls() {
   const photo = useBuildStore((s) => s.photo);
   const boating = usePlayerStore((s) => s.boating);
   const pvp = useGameStore((s) => s.world?.mode === 'pvp');
+  const dm = useGameStore((s) => s.world?.mode === 'deathmatch');
+  const dmAim = useDeathmatchStore((s) => s.aiming);
   const enabled = touchEnabled(mode);
   const heldRanged = useInventoryStore((s) => {
     const st = s.slots[s.selected];
@@ -45,6 +48,8 @@ export function TouchControls() {
   const stickId = useRef<number | null>(null);
   const look = useRef<{ id: number; x: number; y: number; sx: number; sy: number; moved: boolean; holding: boolean; timer: number } | null>(null);
   const lastJump = useRef(0);
+  /** Deathmatch: the finger holding 🔥 also aims — slide it to steer / pull down against recoil. */
+  const fireLook = useRef<{ id: number; x: number; y: number } | null>(null);
   /** Which held action each finger on a button controls — released by pointer id, even if the button
    *  under the finger is swapped out mid-press (e.g. ⤒ turning into ⏬ when flight starts). */
   const heldBy = useRef(new Map<number, Held>());
@@ -135,7 +140,11 @@ export function TouchControls() {
   const hold = (key: Held) => ({
     onPointerDown: (e: React.PointerEvent) => {
       e.stopPropagation();
-      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+      } catch {
+        /* pointer already gone: release still arrives via pointerup / cancel */
+      }
       const inp = input();
       if (!inp) return;
       if (key === 'jump' && buildMode && !buildCam && !flying) {
@@ -166,6 +175,38 @@ export function TouchControls() {
       if (inp) inp.touch[key] = false;
     },
   });
+  const fireBtn = () => {
+    const h = hold('breakHeld');
+    const end = (e: React.PointerEvent) => {
+      if (fireLook.current?.id === e.pointerId) fireLook.current = null;
+    };
+    return {
+      onPointerDown: (e: React.PointerEvent) => {
+        h.onPointerDown(e);
+        fireLook.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      },
+      onPointerMove: (e: React.PointerEvent) => {
+        const f = fireLook.current;
+        if (!f || f.id !== e.pointerId) return;
+        e.stopPropagation();
+        const inp = input();
+        if (inp) {
+          inp.lookX += (e.clientX - f.x) * 2.2;
+          inp.lookY += (e.clientY - f.y) * 2.2;
+        }
+        f.x = e.clientX;
+        f.y = e.clientY;
+      },
+      onPointerUp: (e: React.PointerEvent) => {
+        end(e);
+        h.onPointerUp(e);
+      },
+      onPointerCancel: (e: React.PointerEvent) => {
+        end(e);
+        h.onPointerCancel(e);
+      },
+    };
+  };
   const tapBtn = (fn: () => void) => ({
     onPointerDown: (e: React.PointerEvent) => {
       e.stopPropagation();
@@ -244,7 +285,18 @@ export function TouchControls() {
       >
         <div className="knob" ref={knob} />
       </div>
-      {buildMode && photo ? (
+      {dm ? (
+        <div className="touch-buttons dm-touch">
+          <button className="tbtn big t-main dm-fire" aria-label="Fire (slide to aim)" {...fireBtn()}>🔥</button>
+          <button className="tbtn big t-jump" aria-label="Jump" {...hold('jump')}>⤒</button>
+          <button className={`tbtn t-a ${dmAim ? 'on' : ''}`} aria-label="Aim" {...tapBtn(() => { const s = Game.current?.dm; if (s) s.touchAim = !s.touchAim; })}>🎯</button>
+          <button className="tbtn t-b" aria-label="Reload" {...tapBtn(() => Game.current?.dm?.reload())}>R</button>
+          <button className="tbtn t-c" aria-label="Crouch" {...hold('crouch')}>⤓</button>
+          <button className="tbtn t-d" aria-label="Switch weapon" {...tapBtn(() => Game.current?.dm?.cycleWeapon(1))}>⇄</button>
+          <button className="tbtn t-e" aria-label="Pick up" {...tapBtn(interact)}>✋</button>
+          <button className="tbtn t-f" aria-label="Medkit" {...tapBtn(() => Game.current?.dm?.heal())}>🩹</button>
+        </div>
+      ) : buildMode && photo ? (
         <div className="touch-buttons build vertical photo">
           <button key="up" className="tbtn t-corner" aria-label="Camera up" {...hold('jump')}>⏫</button>
           <button key="down" className="tbtn big t-jump" aria-label="Camera down" {...hold('crouch')}>⏬</button>
@@ -271,7 +323,13 @@ export function TouchControls() {
           <button className="tbtn t-c" aria-label="Crouch" {...hold('crouch')}>⤓</button>
         </div>
       )}
-      {!buildMode && (
+      {dm && (
+        <div className="touch-top">
+          <button className="tbtn small" aria-label="Scoreboard" {...tapBtn(() => Game.current?.dm?.toggleScoreboard())}>🏆</button>
+          <button className="tbtn small" aria-label="Pause" {...tapBtn(() => Game.current?.openOverlay('pause'))}>⏸</button>
+        </div>
+      )}
+      {!buildMode && !dm && (
         <div className="touch-top">
           <button className="tbtn small" aria-label="Backpack" {...tapBtn(() => Game.current?.openOverlay('inventory'))}>🎒</button>
           {pvp ? (

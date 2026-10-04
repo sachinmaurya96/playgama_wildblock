@@ -93,6 +93,12 @@ export class Player {
   flying = false;
   /** Sitting in a boat: the boat moves the body (see entities/Boats.ts). */
   seated = false;
+  /** Deathmatch: can look around but not move (countdown, match over). */
+  frozen = false;
+  /** Deathmatch aiming: camera FOV override (scope zoom), look sensitivity and move speed multipliers. */
+  fovOverride: number | null = null;
+  lookScale = 1;
+  speedScale = 1;
   /** Called when flight ends by touching down (Build Home updates its HUD). */
   onLanded: (() => void) | null = null;
 
@@ -140,6 +146,8 @@ export class Player {
   /** Apply damage (after defense). Returns actual damage. */
   hurt(amount: number, cause: string, from?: THREE.Vector3): number {
     if (this.creative) return 0;
+    // Deathmatch: health belongs to the host; environmental damage is reported to it
+    if (this.game.dm) return this.game.dm.envDamage(amount, cause);
     if (this.dead || this.invulnerable > 0 || this.game.difficulty === 'peaceful' && cause !== 'fall' && cause !== 'void') return 0;
     let dmg = amount;
     const eq = this.equipBonus();
@@ -193,7 +201,7 @@ export class Player {
     if (!simulate) input.gyro.take(); // never save up a turn while paused
     // ---- look (also works while paused for smooth camera return, but only with pointer lock)
     if (simulate) {
-      const sens = 0.0022 * settings.controls.sensitivity;
+      const sens = 0.0022 * settings.controls.sensitivity * this.lookScale;
       this.yaw -= input.lookX * sens;
       this.pitch -= input.lookY * sens * (settings.controls.invertY ? -1 : 1);
       // gyro aiming (phones / tablets): turning the device turns the camera
@@ -214,7 +222,8 @@ export class Player {
     const world = this.game.world;
     // Freeze until the chunk under us exists — never fall through missing terrain.
     this.waitingForGround = !this.game.chunks.isReady(b.pos.x, b.pos.z);
-    if (!simulate || this.dead || this.waitingForGround) {
+    if (!simulate || this.dead || this.waitingForGround || this.frozen) {
+      if (this.frozen) b.vel.set(0, 0, 0);
       this.updateAvatar(dt, 0);
       return;
     }
@@ -240,11 +249,11 @@ export class Player {
     const mv = input.moveVector();
     this.crouching = (input.isDown('crouch') || input.touch.crouch) && !this.inWater && !this.flying;
     const wantsSprint = (input.isDown('sprint') || input.touch.sprint) && mv.y > 0.3 && !this.crouching;
-    const pvp = !!this.game.pvp;
+    const pvp = !!this.game.pvp || !!this.game.dm;
     this.sprinting = wantsSprint && (pvp || this.energy > 12);
     let speed: number;
     if (pvp) {
-      speed = this.inWater ? SWIM : this.crouching ? CROUCH : this.sprinting ? PVP_SPRINT : PVP_WALK;
+      speed = (this.inWater ? SWIM : this.crouching ? CROUCH : this.sprinting ? PVP_SPRINT : PVP_WALK) * this.speedScale;
     } else {
       const eq = this.equipBonus();
       speed = this.inWater ? SWIM : this.crouching ? CROUCH : this.sprinting ? SPRINT : WALK;
@@ -340,7 +349,7 @@ export class Player {
       }
     }
 
-    if (!this.creative) this.updateVitals(dt, hs);
+    if (!this.creative && !this.game.dm) this.updateVitals(dt, hs);
     this.updateAvatar(dt, hs);
   }
 
@@ -470,7 +479,7 @@ export class Player {
       camera.rotation.z += Math.sin(this.shakeSeed * 1.7) * amt;
       this.shake = Math.max(0, this.shake - dt * 3);
     }
-    const fovTarget = settings.graphics.fov + (this.sprinting && hs > 5 ? 6 : 0);
+    const fovTarget = this.fovOverride ?? settings.graphics.fov + (this.sprinting && hs > 5 ? 6 : 0);
     if (Math.abs(camera.fov - fovTarget) > 0.05) {
       camera.fov += (fovTarget - camera.fov) * Math.min(1, dt * 8);
       camera.updateProjectionMatrix();

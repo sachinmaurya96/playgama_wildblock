@@ -119,7 +119,7 @@ export class ChunkManager {
 
   private requestGen(r: ChunkRecord) {
     r.gen = 'pending';
-    const job = this.pool.run<ChunkGenResult>({ type: 'gen', seed: this.world.seed, cx: r.cx, cz: r.cz, plot: this.world.plot ?? undefined, caves: this.world.caveVersion }, [], () => this.priority(r.cx, r.cz));
+    const job = this.pool.run<ChunkGenResult>({ type: 'gen', seed: this.world.seed, cx: r.cx, cz: r.cz, plot: this.world.plot ?? undefined, city: this.world.city ? true : undefined, caves: this.world.caveVersion }, [], () => this.priority(r.cx, r.cz));
     r.cancelGen = job.cancel;
     job.promise.then(
       (res) => {

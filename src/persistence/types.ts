@@ -10,7 +10,7 @@ import type { WeatherKind } from '../game/systems/EnvironmentSystem';
 export const SAVE_VERSION = 2;
 
 /** Two kinds of worlds: survival exploration and the Build Home creative sandbox. */
-export type GameMode = 'survival' | 'build' | 'pvp';
+export type GameMode = 'survival' | 'build' | 'pvp' | 'deathmatch';
 
 export type PlotType = 'meadow' | 'coastal' | 'forest' | 'mountain' | 'lakeside' | 'desert' | 'studio';
 export type BuildTimeOfDay = 'morning' | 'day' | 'golden' | 'night';

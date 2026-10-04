@@ -10,6 +10,8 @@ export interface GenRequest {
   caves?: number;
   /** Build Home plot type (flat construction lot) instead of survival terrain. */
   plot?: PlotType;
+  /** Deathmatch City Clash map (seed = room seed). */
+  city?: boolean;
 }
 
 export interface MeshRequest {

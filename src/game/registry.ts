@@ -10,6 +10,8 @@ export interface GameHandle {
   openOverlay(o: Overlay): void;
   /** Set during a PvP match (truthy). */
   readonly pvp: unknown;
+  /** Set during a Deathmatch match (truthy). */
+  readonly dm: unknown;
 }
 
 export const gameRegistry: { current: GameHandle | null } = { current: null };

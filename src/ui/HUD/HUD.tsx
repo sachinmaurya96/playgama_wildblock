@@ -15,6 +15,7 @@ import { BuildHUD } from '../Build/BuildHUD';
 import { CoopBar, PvpHud } from './PvpHud';
 import { usePvpStore } from '../../stores/pvpStore';
 import { armorStats } from '../../game/player/Player';
+import { DeathmatchHud } from '../Deathmatch/DeathmatchHud';
 
 export function HUD() {
   const hidden = useGameStore((s) => s.hudHidden);
@@ -25,6 +26,15 @@ export function HUD() {
       <div className="hud">
         <BuildHUD />
         <CoopBar />
+        <Toasts />
+        <DebugPanel />
+      </div>
+    );
+  if (mode === 'deathmatch')
+    return (
+      <div className="hud">
+        <DeathmatchHud />
+        <HurtVignette />
         <Toasts />
         <DebugPanel />
       </div>

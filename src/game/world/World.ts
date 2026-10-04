@@ -7,6 +7,7 @@ import { TerrainSampler } from './TerrainSampler';
 import { PlotSampler } from './PlotGenerator';
 import type { PlotType } from '../../persistence/types';
 import { BLOCK_DEFS } from '../../data/blocks';
+import { cityBlueprint, type CityBlueprint } from '../deathmatch/DeathmatchMap';
 
 export type ChunkModMap = Map<number, number>; // local index -> id | meta << 8
 
@@ -45,11 +46,15 @@ export class World {
   readonly plot: PlotType | null;
   readonly plotSampler: PlotSampler | null;
 
-  constructor(seed: number, plot: PlotType | null = null, readonly caveVersion = 1) {
+  /** Deathmatch city blueprint (null everywhere else). */
+  readonly city: CityBlueprint | null;
+
+  constructor(seed: number, plot: PlotType | null = null, readonly caveVersion = 1, city = false) {
     this.seed = seed >>> 0;
     this.sampler = new TerrainSampler(this.seed, caveVersion);
-    this.plot = plot;
-    this.plotSampler = plot ? new PlotSampler(this.seed, plot) : null;
+    this.plot = city ? null : plot;
+    this.plotSampler = this.plot ? new PlotSampler(this.seed, this.plot) : null;
+    this.city = city ? cityBlueprint(this.seed) : null;
   }
 
   chunkAt(cx: number, cz: number): Chunk | undefined {
@@ -164,6 +169,7 @@ export class World {
   surfaceY(x: number, z: number): number {
     const c = this.chunkAt(blockToChunk(x), blockToChunk(z));
     if (c) return c.heightmap[blockToLocal(z) * CHUNK_SIZE + blockToLocal(x)];
+    if (this.city) return this.city.surfaceY(x, z);
     if (this.plotSampler) return this.plotSampler.column(x, z).height;
     return this.sampler.sample(x, z).height;
   }
