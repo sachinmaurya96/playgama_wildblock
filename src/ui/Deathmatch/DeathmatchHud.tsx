@@ -7,7 +7,9 @@ import { useGameStore } from '../../stores/gameStore';
 import { keyLabel, useSettingsStore } from '../../stores/settingsStore';
 import { DeathmatchResults } from './DeathmatchResults';
 import { DeathmatchScoreboard } from './DeathmatchScoreboard';
-import { DmVoice } from './DmVoice';
+import { PlayerRadar } from '../common/Radar';
+import { VoiceDock } from '../Voice/VoiceControls';
+import { DmOptions } from './DmOptions';
 import { WeaponHud } from './WeaponHud';
 
 const clock = (s: number) => {
@@ -22,6 +24,7 @@ export function DeathmatchHud() {
   const phase = useDeathmatchStore((s) => s.phase);
   const lobby = useDeathmatchStore((s) => s.lobby);
   const statsMap = useDeathmatchStore((s) => s.stats);
+  const options = useDeathmatchStore((s) => s.optionsOpen);
   const stats = useMemo(
     () => (lobby?.players ?? []).map((p) => ({ id: p.id, name: p.name, team: p.team, kills: statsMap[p.id]?.kills ?? 0, deaths: statsMap[p.id]?.deaths ?? 0, damage: 0 })),
     [lobby, statsMap],
@@ -33,7 +36,13 @@ export function DeathmatchHud() {
       {!hidden && phase !== 'ended' && (
         <>
           <TopBar />
-          <DmVoice />
+          <PlayerRadar
+            blips={() => Game.current?.dm?.radarBlips() ?? null}
+            range={160}
+            title="Radar — you are the white arrow, facing up. Green = teammates, red = opponents (the whole city fits)."
+            empty="Players show here"
+          />
+          <VoiceDock className="dm-voice" />
           <KeyHints />
           <KillFeed />
           <Health />
@@ -49,6 +58,7 @@ export function DeathmatchHud() {
       <DeathScreen />
       {phase !== 'ended' && <DeathmatchScoreboard stats={stats} />}
       {phase === 'ended' && <DeathmatchResults />}
+      {options && phase !== 'ended' && <DmOptions />}
     </div>
   );
 }
@@ -67,8 +77,22 @@ function TopBar() {
         <span className="dash">—</span>
         <span className="blue"><b>{String(blue).padStart(2, '0')}</b> BLUE</span>
       </div>
+      <OptionsChip />
       <div className={`dm-timer ${urgent ? 'urgent' : ''}`}>{phase !== 'playing' ? clock(minutes * 60) : t <= 0 ? 'Time!' : clock(t)}</div>
     </div>
+  );
+}
+
+/** ⚙️ options (desktop: next to the score; touch has its own ⚙️ button top-right). */
+function OptionsChip() {
+  const open = useDeathmatchStore((s) => s.optionsOpen);
+  const touch = useSettingsStore((s) => s.controls.touch);
+  const key = useSettingsStore((s) => keyLabel(s.controls.keys.options));
+  if (touchEnabled(touch)) return null;
+  return (
+    <button type="button" className={`dm-gear ${open ? 'on' : ''}`} title={`Options: camera, voice, controls, leave (${key})`} onClick={() => Game.current?.setDmOptions(!open)}>
+      ⚙️<kbd className="dm-k">{key}</kbd>
+    </button>
   );
 }
 
@@ -130,6 +154,8 @@ function Crosshair() {
   const hitHead = useDeathmatchStore((s) => s.hitHead);
   const killAt = useDeathmatchStore((s) => s.killAt);
   const scoped = useDeathmatchStore((s) => s.scoped);
+  // aiming through a red-dot sight: the sight's own dot is the crosshair (hit markers still show)
+  const redDot = useDeathmatchStore((s) => s.aiming && s.weapon !== 'sword' && s.weapon !== 'm24');
   const [, tick] = useState(0);
   useEffect(() => {
     if (!hitAt && !killAt) return;
@@ -143,8 +169,12 @@ function Crosshair() {
   const showKill = now - killAt < 900;
   return (
     <div className="dm-cross" style={{ ['--gap' as string]: `${gap}px` }}>
-      <i className="t" /><i className="b" /><i className="l" /><i className="r" />
-      <span className="dot" />
+      {!redDot && (
+        <>
+          <i className="t" /><i className="b" /><i className="l" /><i className="r" />
+          <span className="dot" />
+        </>
+      )}
       {showHit && <span className={`dm-hitmark ${hitHead ? 'head' : ''}`}>✕</span>}
       {showKill && <span className="dm-killmark">ELIMINATED</span>}
     </div>
@@ -159,8 +189,8 @@ function KeyHints() {
   const k = (code: string) => keyLabel(code);
   const list: [string, string][] = [
     [`${k(keys.forward)}${k(keys.left)}${k(keys.back)}${k(keys.right)}`, 'Move'], [k(keys.jump), 'Jump'], [k(keys.sprint), 'Sprint'], [k(keys.crouch), 'Crouch'],
-    ['LMB', 'Fire'], ['RMB', 'Aim / scope'], ['R', 'Reload'], ['1-3', 'Weapons'], ['Q', 'Last weapon'],
-    ['E', 'Pick up'], ['4', 'Small medkit'], ['5', 'Large medkit'], [k(keys.talk), 'Talk'], [k(keys.listen), 'Listen'], ['Tab', 'Scores'], ['Esc', 'Menu'],
+    ['LMB / F', 'Fire'], ['RMB', 'Aim / scope'], ['R', 'Reload'], ['1-3', 'Weapons'], ['Q', 'Last weapon'],
+    ['E', 'Pick up'], ['4', 'Small medkit'], ['5', 'Large medkit'], [k(keys.talk), 'Talk'], [k(keys.listen), 'Listen'], ['Tab', 'Scores'], [k(keys.options), 'Options'], ['Esc', 'Menu'],
   ];
   return (
     <ul className="dm-keys" aria-label="Controls">
@@ -266,6 +296,7 @@ function ClickToFight() {
   const overlay = useGameStore((s) => s.overlay);
   const phase = useDeathmatchStore((s) => s.phase);
   const touch = useSettingsStore((s) => s.controls.touch);
+  const options = useDeathmatchStore((s) => s.optionsOpen);
   const [locked, setLocked] = useState(true);
   useEffect(() => {
     const on = () => setLocked(!!document.pointerLockElement);
@@ -273,12 +304,12 @@ function ClickToFight() {
     on();
     return () => document.removeEventListener('pointerlockchange', on);
   }, []);
-  if (locked || overlay !== null || touchEnabled(touch) || phase === 'ended') return null;
+  if (locked || overlay !== null || options || touchEnabled(touch) || phase === 'ended') return null;
   return (
     <button className="click-to-play" onClick={() => Game.current?.input.requestLock()}>
       <span className="ctp-card">
         <b>Click to get back in the fight</b>
-        <small>WASD move · Mouse aim · Left fire · Right aim · R reload · 1-3 weapons · 4/5 medkits · E pick up · Tab scores · Esc menu</small>
+        <small>WASD move · Mouse aim · Left click / F fire · Right aim · R reload · 1-3 weapons · 4/5 medkits · E pick up · T talk · Tab scores · O options · Esc menu</small>
       </span>
     </button>
   );

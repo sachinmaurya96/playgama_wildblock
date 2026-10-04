@@ -6,7 +6,7 @@ import { LootManager, applyPickup, pickupBlock, type LootItem } from './LootMana
 import { computeResult, type MatchResult } from './MatchResults';
 import { DM_PROTOCOL, parseClientMsg, type ClientMsg, type ServerMsg } from './Protocol';
 import { chooseSpawn } from './SpawnManager';
-import { GUNS, HEALTH_STATION, LARGE_MEDKIT, MAX_HP, SMALL_MEDKIT, SWORD, falloff, type GunId, type WeaponId } from './WeaponDefinitions';
+import { GUNS, GUN_IDS, HEALTH_STATION, LARGE_MEDKIT, MAX_HP, SMALL_MEDKIT, SWORD, falloff, type GunId, type WeaponId } from './WeaponDefinitions';
 import { Arsenal } from './WeaponSystem';
 
 /**
@@ -336,7 +336,7 @@ export class DmServer {
       for (const mp of this.players.values()) {
         const reloaded = mp.arsenal.update(now);
         if (reloaded) this.sendInv(mp);
-        if (!mp.alive && mp.spawned && mp.respawnAt && now >= mp.respawnAt) this.respawn(mp);
+        if (!mp.alive && mp.spawned && mp.respawnAt && now >= mp.respawnAt) this.respawn(mp, true);
         if (mp.heal && now >= mp.heal.endsAt) this.healFinish(mp);
       }
       const l = this.loot!.tick(now);
@@ -535,7 +535,8 @@ export class DmServer {
     this.io.send(null, { t: 'kill', r: this.room.round, v: v.id, k: killer?.id ?? null, w, head, red: this.red, blue: this.blue, respawnAt: v.respawnAt });
   }
 
-  private respawn(mp: MatchPlayer): void {
+  /** `afterDeath`: comes back with a random gun (one loaded magazine + one spare) so nobody respawns sword-only. */
+  private respawn(mp: MatchPlayer, afterDeath = false): void {
     const now = this.io.now();
     const others = [...this.players.values()].filter((p) => p.id !== mp.id && p.spawned).map((p) => ({ team: p.team, x: p.x, y: p.y, z: p.z, alive: p.alive }));
     const sp = chooseSpawn(mp.team, others, (x, y, z) => this.city!.blockAt(x, y, z), this.rnd);
@@ -552,6 +553,10 @@ export class DmServer {
     mp.lastHit = null;
     mp.protUntil = now + PROTECT_SECONDS;
     mp.arsenal.reset();
+    if (afterDeath) {
+      const gun = GUN_IDS[Math.floor(this.rnd() * GUN_IDS.length) % GUN_IDS.length];
+      mp.arsenal.addGun(gun, GUNS[gun].magazine, GUNS[gun].magazine, now);
+    }
     this.io.send(null, { t: 'spawn', r: this.room.round, id: mp.id, p: [sp.x, sp.y, sp.z], yw: sp.yaw, protUntil: mp.protUntil });
     this.sendInv(mp, true);
   }

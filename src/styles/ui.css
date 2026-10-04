@@ -833,3 +833,6 @@ button.pvp-chip { cursor: pointer; }
 /* Build Home with friends: 🎧 / 🎤 sit above the room chips, clear of the tool bar and side panels */
 .hud > .coop-bar ~ .voice-dock { top: auto; left: 50%; right: auto; transform: translateX(-50%); bottom: max(136px, calc(var(--safe-b) + 130px)); flex-direction: column-reverse; align-items: center; }
 .touch-ui .hud > .coop-bar ~ .voice-dock { bottom: max(150px, calc(var(--safe-b) + 144px)); }
+
+/* voice errors under the 🎧 / 🎤 buttons (e.g. "mic blocked — you can still listen") */
+.voice-dock .voice-err.dock { font-size: 11px; background: rgba(30, 22, 14, 0.7); color: #ffd24a; padding: 2px 8px; border-radius: 8px; max-width: 240px; }

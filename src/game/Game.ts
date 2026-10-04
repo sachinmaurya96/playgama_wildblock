@@ -14,6 +14,7 @@ import { BuildMode } from './build/BuildMode';
 import { PlotBackdrop } from './rendering/PlotBackdrop';
 import { PLOT_Y } from './world/PlotGenerator';
 import { useBuildStore } from '../stores/buildStore';
+import { useDeathmatchStore } from '../stores/deathmatchStore';
 import { usePvpStore } from '../stores/pvpStore';
 import { AssetManager } from './core/AssetManager';
 import { audio } from './core/audio';
@@ -632,6 +633,8 @@ export class Game {
       }
       if (inp.keyPressed('F3')) useSettingsStore.getState().update('gameplay', { showDebug: !useSettingsStore.getState().gameplay.showDebug });
       if (inp.wasPressed('hideHud') && o === null) useGameStore.setState({ hudHidden: !gs.hudHidden });
+      // Build Home with friends: Esc closes the ⚙️ options (opened from its button — O is the roof tool here)
+      if (this.pvp && o === null && usePvpStore.getState().gearOpen && inp.keyPressed('Escape')) this.setPvpOptions(false);
       return;
     }
     if (this.dm) {
@@ -639,6 +642,12 @@ export class Game {
       if (inp.keyPressed('F3')) useSettingsStore.getState().update('gameplay', { showDebug: !useSettingsStore.getState().gameplay.showDebug });
       if (inp.wasPressed('hideHud') && o === null) useGameStore.setState({ hudHidden: !gs.hudHidden });
       if (inp.keyPressed('Escape') && o !== null && o !== 'pause') this.closeOverlay();
+      // O opens / closes the ⚙️ options (camera, voice, controls, exit) — Esc closes it too
+      if (o === null) {
+        const open = useDeathmatchStore.getState().optionsOpen;
+        if (inp.wasPressed('options')) this.setDmOptions(!open);
+        else if (open && inp.keyPressed('Escape')) this.setDmOptions(false);
+      }
       return;
     }
     if (inp.wasPressed('inventory')) {
@@ -673,6 +682,17 @@ export class Game {
       usePvpStore.getState().set({ gearOpen: true, scoreboardOpen: false });
     } else {
       usePvpStore.getState().set({ gearOpen: false });
+      if (useGameStore.getState().overlay === null) this.input.requestLock();
+    }
+  }
+
+  /** Deathmatch ⚙️ options panel: frees the mouse while open (the match keeps running), recaptures it when closed. */
+  setDmOptions(open: boolean): void {
+    if (open) {
+      this.releasePointer();
+      useDeathmatchStore.getState().set({ optionsOpen: true, scoreboardOpen: false });
+    } else {
+      useDeathmatchStore.getState().set({ optionsOpen: false });
       if (useGameStore.getState().overlay === null) this.input.requestLock();
     }
   }

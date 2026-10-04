@@ -1,8 +1,12 @@
 import { iceServers, type NetMsg } from './transport';
-import { usePvpStore } from '../stores/pvpStore';
+import { useVoiceStore, type VoiceScope } from '../stores/voiceStore';
 
 /**
- * Voice chat for PvP Mode — free and serverless, like the rest of PvP.
+ * Voice chat for every multiplayer mode (PvP, Build together, Build Home with
+ * friends, Deathmatch) — free and serverless, like the rest of multiplayer.
+ * Each mode creates one VoiceChat for its room and forwards the "v" / "vs"
+ * signalling messages; the shared controls in ui/Voice find it through
+ * `voiceService.current` and read the shared voice store.
  *
  * Every pair of players in voice gets its own direct WebRTC audio connection
  * (a small mesh: fine for up to 8 players at ~30 kbps each). The game's
@@ -45,6 +49,18 @@ interface Prefs {
   listen: boolean;
 }
 
+/** The voice chat of the room you are in right now (null outside multiplayer). */
+export const voiceService: { current: VoiceChat | null } = { current: null };
+
+function loadScopes(): { hear: VoiceScope; talk: VoiceScope } {
+  try {
+    const v = JSON.parse(localStorage.getItem('wb-voice-scope') ?? '{}');
+    return { hear: v.hear === 'team' ? 'team' : 'all', talk: v.talk === 'all' ? 'all' : 'team' };
+  } catch {
+    return { hear: 'all', talk: 'team' };
+  }
+}
+
 function loadPrefs(): Prefs {
   try {
     const v = JSON.parse(localStorage.getItem('wb-voice') ?? '{}');
@@ -78,6 +94,12 @@ export class VoiceChat {
   private gestureOff: (() => void) | null = null;
   muted = new Set<string>();
   volumes = new Map<string, number>();
+  /** Team modes: a player's team (undefined = unknown). null = no teams, everyone hears everyone. */
+  private teamOf: ((id: string) => string | undefined) | null = null;
+  hearScope: VoiceScope;
+  talkScope: VoiceScope;
+  /** "Nearby louder" offered (open-world modes). */
+  proximityAllowed = true;
 
   constructor(
     private selfId: string,
@@ -87,6 +109,10 @@ export class VoiceChat {
     this.mode = p.mode;
     this.proximity = p.proximity;
     this.wantListen = p.listen;
+    const sc = loadScopes();
+    this.hearScope = sc.hear;
+    this.talkScope = sc.talk;
+    voiceService.current = this;
     this.publish();
     // iOS / Safari only let audio start inside a tap (touchend / click) or key press, and pause it again when the
     // mic switches on — so every tap retries: wake the audio engine and any voice that's waiting to play
@@ -121,13 +147,76 @@ export class VoiceChat {
     }
   }
 
-  private publish(extra: Record<string, unknown> = {}) {
+  private publish(extra: { error?: string | null; speaking?: string[] } = {}) {
+    if (voiceService.current !== this) return;
     const deaf = [...this.inVoice].filter(([, s]) => !s.ln).map(([id]) => id);
-    usePvpStore.getState().set({
-      voiceOn: this.on, voiceMode: this.mode, voiceProximity: this.proximity, voiceTalking: this.transmitting(),
-      voiceListen: this.listen, voiceMicOn: this.micOn, voiceMicReady: !!this.stream,
-      voicePeers: [...this.inVoice.keys()], voiceDeaf: deaf, voiceMuted: [...this.muted], ...extra,
+    const teams = !!this.teamOf;
+    useVoiceStore.getState().set({
+      on: this.on, mode: this.mode, proximity: this.proximity && this.proximityAllowed, proximityAllowed: this.proximityAllowed, talking: this.transmitting(),
+      listen: this.listen, micOn: this.micOn, micReady: !!this.stream, selfId: this.selfId,
+      peers: [...this.inVoice.keys()], deaf, muted: [...this.muted],
+      hearScope: teams ? this.hearScope : null, talkScope: teams ? this.talkScope : null, ...extra,
     });
+  }
+
+  // ---------------------------------------------------------------- teams (Deathmatch)
+
+  /** Turn on team voice: `teamOf` tells each player's team. Call `refreshTeams()` when teams change. */
+  useTeams(teamOf: (id: string) => string | undefined): void {
+    this.teamOf = teamOf;
+    this.refreshTeams();
+  }
+
+  private sameTeam(id: string): boolean {
+    if (!this.teamOf) return true;
+    const a = this.teamOf(this.selfId), b = this.teamOf(id);
+    return !!a && a === b;
+  }
+
+  /** Do we play this player's voice? (Team modes: teammates always; the others only with "hear all".) */
+  hears(id: string): boolean {
+    return !this.teamOf || this.hearScope === 'all' || this.sameTeam(id);
+  }
+
+  /** Does our mic go to this player? */
+  talksTo(id: string): boolean {
+    return !this.teamOf || this.talkScope === 'all' || this.sameTeam(id);
+  }
+
+  setHearScope(s: VoiceScope): void {
+    this.hearScope = s;
+    this.saveScopes();
+    this.refreshTeams();
+  }
+
+  setTalkScope(s: VoiceScope): void {
+    this.talkScope = s;
+    this.saveScopes();
+    this.refreshTeams();
+  }
+
+  private saveScopes() {
+    try {
+      localStorage.setItem('wb-voice-scope', JSON.stringify({ hear: this.hearScope, talk: this.talkScope }));
+    } catch {
+      /* private mode */
+    }
+  }
+
+  /** Re-apply who hears our mic (teams or scopes changed). */
+  refreshTeams(): void {
+    this.refreshSenders();
+    this.publish();
+  }
+
+  /** Each link carries our mic only to the players we talk to (the others get silence). */
+  private refreshSenders() {
+    const track = this.stream?.getAudioTracks()[0] ?? null;
+    for (const [id, l] of this.links) {
+      if (!l.sender || l.pc.connectionState !== 'connected') continue;
+      const want = track && this.talksTo(id) ? track : null;
+      if (l.sender.track !== want) void l.sender.replaceTrack(want).catch(() => {});
+    }
   }
 
   /** Is our voice going out right now? */
@@ -139,6 +228,7 @@ export class VoiceChat {
   private applyTrackState() {
     const live = this.transmitting();
     for (const t of this.stream?.getAudioTracks() ?? []) t.enabled = live;
+    this.refreshSenders();
     this.publish();
   }
 
@@ -163,7 +253,7 @@ export class VoiceChat {
     this.on = true;
     this.announce();
     for (const id of this.inVoice.keys()) this.maybeConnect(id);
-    this.publish({ voiceError: null });
+    this.publish({ error: null });
   }
 
   /** Ask for the microphone once; afterwards it's switched on / off instantly. */
@@ -205,7 +295,7 @@ export class VoiceChat {
       }
       this.announce();
       this.applyTrackState();
-      this.publish({ voiceError: micError });
+      this.publish({ error: micError });
       return !!this.stream;
     })().finally(() => (this.micPending = null));
     return this.micPending;
@@ -281,7 +371,7 @@ export class VoiceChat {
     for (const t of this.stream?.getTracks() ?? []) t.stop();
     this.stream = null;
     this.localAnalyser = null;
-    this.publish({ voiceError: null, voiceSpeaking: [] });
+    this.publish({ error: null, speaking: [] });
   }
 
   setMode(mode: VoiceMode): void {
@@ -408,6 +498,8 @@ export class VoiceChat {
       this.attachRemote(id, l, stream);
     };
     pc.onconnectionstatechange = () => {
+      // once the link is up, mute it if this player shouldn't hear us (team voice)
+      if (pc.connectionState === 'connected') this.refreshSenders();
       if (pc.connectionState === 'failed') {
         this.closeLink(id);
         // try again in a moment (network hiccup)
@@ -451,7 +543,7 @@ export class VoiceChat {
     l.gain.disconnect();
     l.panner.disconnect();
     l.source.connect(l.analyser!);
-    if (this.proximity) {
+    if (this.proximity && this.proximityAllowed) {
       l.source.connect(l.panner);
       l.panner.connect(l.gain);
     } else l.source.connect(l.gain);
@@ -518,7 +610,7 @@ export class VoiceChat {
     }
     for (const [id, l] of this.links) {
       if (!l.gain || !l.panner) continue;
-      const vol = !this.listen || this.muted.has(id) ? 0 : this.volumes.get(id) ?? 1;
+      const vol = !this.listen || this.muted.has(id) || !this.hears(id) ? 0 : this.volumes.get(id) ?? 1;
       l.gain.gain.setTargetAtTime(vol * 1.4, t, 0.05);
       const p = positions.get(id);
       if (p) {
@@ -535,9 +627,9 @@ export class VoiceChat {
       this.levelTimer = 0.15;
       const speaking: string[] = [];
       if (this.transmitting() && this.loud(this.localAnalyser, this.localLevel)) speaking.push(this.selfId);
-      if (this.listen) for (const [id, l] of this.links) if (!this.muted.has(id) && this.loud(l.analyser, l.level)) speaking.push(id);
-      const prev = usePvpStore.getState().voiceSpeaking;
-      if (prev.join() !== speaking.join()) usePvpStore.getState().set({ voiceSpeaking: speaking });
+      if (this.listen) for (const [id, l] of this.links) if (!this.muted.has(id) && this.hears(id) && this.loud(l.analyser, l.level)) speaking.push(id);
+      const prev = useVoiceStore.getState().speaking;
+      if (voiceService.current === this && prev.join() !== speaking.join()) useVoiceStore.getState().set({ speaking });
     }
   }
 
@@ -546,5 +638,9 @@ export class VoiceChat {
     this.disable();
     void this.ctx?.close().catch(() => {});
     this.ctx = null;
+    if (voiceService.current === this) {
+      voiceService.current = null;
+      useVoiceStore.getState().reset();
+    }
   }
 }

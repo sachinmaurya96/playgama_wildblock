@@ -222,7 +222,7 @@
 .touch-ui .dm-wslot { width: 64px; height: 46px; }
 .touch-ui .dm-ammo { bottom: auto; top: max(84px, calc(var(--safe-t) + 78px)); right: max(12px, var(--safe-r)); }
 .touch-ui .dm-count b { font-size: 30px; }
-.touch-ui .dm-health { bottom: auto; top: max(12px, var(--safe-t)); width: 190px; }
+.touch-ui .dm-health { bottom: auto; top: max(12px, var(--safe-t)); left: calc(max(8px, var(--safe-l)) + 104px); width: 190px; }
 .touch-ui .dm-feed { top: max(140px, calc(var(--safe-t) + 134px)); font-size: 12px; }
 
 @media (max-width: 760px) {
@@ -253,11 +253,18 @@
 @media (max-height: 640px) { .dm-keys { display: none; } }
 
 /* ---------------------------------------------------------------- team voice */
-.dm-hud .dm-voice { top: max(14px, var(--safe-t)); }
-.touch-ui .dm-hud .dm-voice { top: max(96px, calc(var(--safe-t) + 90px)); }
+/* below the radar (top-left) */
+.dm-hud .dm-voice { top: max(176px, calc(var(--safe-t) + 170px)); }
+.touch-ui .dm-hud .dm-voice { top: max(124px, calc(var(--safe-t) + 118px)); }
 .dm-voice .voice-btns { display: flex; gap: 6px; }
 .dm-vchip.red { border-color: #ff6a5a; }
 .dm-vchip.blue { border-color: #5aa0ff; }
 .dm-vpeers, .dm-verror { font-size: 11px; background: rgba(22, 18, 14, 0.55); padding: 1px 8px; border-radius: 8px; max-width: 260px; }
 .dm-verror { color: #ffd24a; }
 .dm-lobby .dm-voice { position: static; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: center; }
+
+/* ---------------------------------------------------------------- options & radar */
+.dm-gear { position: absolute; left: calc(100% + 8px); top: 1px; border: 2px solid rgba(255, 255, 255, 0.3); background: var(--dm-hud); color: #fff; border-radius: 10px; padding: 2px 8px; font-size: 16px; cursor: pointer; display: flex; align-items: center; white-space: nowrap; }
+.dm-gear.on { background: rgba(224, 178, 61, 0.9); }
+.dm-hud .gear-panel { color: var(--ink, #2a1f14); text-shadow: none; font-weight: 700; }
+.dm-hud .pvp-radar { pointer-events: none; }

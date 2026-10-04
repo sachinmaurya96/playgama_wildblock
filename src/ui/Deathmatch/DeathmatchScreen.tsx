@@ -9,7 +9,7 @@ import { normalizeCode } from '../../net/transport';
 import { useDeathmatchStore } from '../../stores/deathmatchStore';
 import { useGameStore } from '../../stores/gameStore';
 import { MenuBackground } from '../MainMenu/MenuBackground';
-import { DmVoice } from './DmVoice';
+import { VoiceDock } from '../Voice/VoiceControls';
 import { TeamPanel } from './TeamPanel';
 
 function load<T>(key: string, fallback: T): T {
@@ -207,7 +207,7 @@ function DeathmatchLobby() {
         <div className="dm-vs" aria-hidden>VS</div>
         <TeamPanel team="blue" players={blue} selfId={selfId} hostId={lobby.hostId} locked={locked} onJoin={join} />
       </div>
-      <DmVoice />
+      <VoiceDock className="dm-voice" />
       {(teamError || startError || error) && <p className="pvp-error dm-msg" role="alert">{teamError ?? startError ?? error}</p>}
       <footer className="dm-lobby-foot">
         <div className="dm-code">

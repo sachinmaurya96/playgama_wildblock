@@ -60,6 +60,8 @@ export interface DmState {
   feed: DmFeedEntry[];
   prompt: string | null;
   scoreboardOpen: boolean;
+  /** The ⚙️ options panel (camera, voice, controls…) — key O on desktop. */
+  optionsOpen: boolean;
   result: MatchResult | null;
   waitingFor: string[];
   spread: number;
@@ -79,7 +81,7 @@ const matchInitial = {
   phase: null as DmState['phase'], countdown: 0, timeLeft: 0, red: 0, blue: 0, hp: 100, alive: true, protectedFor: 0, respawnIn: 0,
   killedBy: null as DmState['killedBy'], loadout: null as LoadoutSnapshot | null, weapon: 'sword' as WeaponId, reloading: 0,
   healing: null as DmState['healing'], aiming: false, scoped: false, hitAt: 0, hitHead: false, killAt: 0, hurtAt: 0, hurtDir: 0,
-  feed: [] as DmFeedEntry[], prompt: null as string | null, scoreboardOpen: false, result: null as MatchResult | null, waitingFor: [] as string[], spread: 0,
+  feed: [] as DmFeedEntry[], prompt: null as string | null, scoreboardOpen: false, optionsOpen: false, result: null as MatchResult | null, waitingFor: [] as string[], spread: 0,
   notice: null as string | null, stats: {} as Record<string, { kills: number; deaths: number }>,
 };
 
