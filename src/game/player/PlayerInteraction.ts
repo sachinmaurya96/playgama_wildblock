@@ -72,7 +72,7 @@ export class PlayerInteraction {
     this.useCooldown = Math.max(0, this.useCooldown - dt);
     this.placeTimer = Math.max(0, this.placeTimer - dt);
 
-    if (!simulate || g.player.dead) {
+    if (!simulate || input.cursorFree || g.player.dead) {
       this.breaking = null;
       gs.setBreakProgress(0);
       g.outline.hide();

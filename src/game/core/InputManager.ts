@@ -21,6 +21,11 @@ export class InputManager {
   lookY = 0;
   wheel = 0;
   pointerLocked = false;
+  /** The shortcut frees the pointer for UI only; world input is blocked until recaptured. */
+  cursorFree = false;
+  /** Runs inside the key gesture so browsers allow pointer lock on the second press. */
+  onCursorToggle: (() => boolean) | null = null;
+  onCursorChange: ((free: boolean) => void) | null = null;
   /** Build Home: accept mouse buttons + track the cursor while the pointer is NOT locked (build camera / cursor mode). */
   allowUnlocked = false;
   /** Build Home: swallow browser shortcuts (Ctrl+Z/Y/D/C/V/S, Tab, F10). */
@@ -73,12 +78,19 @@ export class InputManager {
       this.shift = e.shiftKey;
       this.alt = e.altKey;
       if (isTypingTarget(e.target)) return;
+      if (e.code === this.code('cursor') && !e.ctrlKey && !e.metaKey && !e.altKey && this.onCursorToggle) {
+        if (e.repeat || this.onCursorToggle()) {
+          e.preventDefault();
+          return;
+        }
+      }
       if (!e.repeat) {
         this.pressed.add(e.code);
         if (e.ctrlKey || e.metaKey) this.pressedCtrl.add(e.code);
         if (e.shiftKey) this.pressedShift.add(e.code);
       }
       this.down.add(e.code);
+      if (this.captureShortcuts && e.code === this.code('buildView') && !this.ctrl && !this.alt) e.preventDefault();
       if (this.captureShortcuts && ((this.ctrl && ['KeyZ', 'KeyY', 'KeyD', 'KeyC', 'KeyV', 'KeyS'].includes(e.code)) || e.code === 'Tab' || e.code === 'F10' || (e.altKey && e.code !== 'Tab'))) e.preventDefault();
       // Stop the browser from scrolling / opening find etc. while playing.
       if (this.pointerLocked && (e.code === 'Space' || e.code.startsWith('Arrow') || e.code === 'Tab' || e.code === 'F3' || e.code === 'F2' || (e.ctrlKey && e.code !== 'KeyR'))) e.preventDefault();
@@ -94,6 +106,7 @@ export class InputManager {
       this.mouseLeft = this.mouseRight = false;
     });
     on(canvas, 'mousedown', (e: MouseEvent) => {
+      if (this.cursorFree) return;
       if (!this.pointerLocked && !this.allowUnlocked) return;
       this.updateNdc(e);
       if (!this.pointerLocked && e.button === 1) e.preventDefault();
@@ -115,6 +128,7 @@ export class InputManager {
     });
     on(canvas, 'contextmenu', (e: Event) => e.preventDefault());
     on(window, 'mousemove', (e: MouseEvent) => {
+      if (this.cursorFree) return;
       if (!this.pointerLocked) {
         if (!this.allowUnlocked) return;
         this.updateNdc(e);
@@ -134,6 +148,7 @@ export class InputManager {
       this.lookY += e.movementY;
     });
     on(canvas, 'wheel', (e: WheelEvent) => {
+      if (this.cursorFree) return;
       if (!this.pointerLocked && !this.allowUnlocked) return;
       this.wheel += Math.sign(e.deltaY);
       e.preventDefault();
@@ -143,6 +158,7 @@ export class InputManager {
       const was = this.pointerLocked;
       this.pointerLocked = locked;
       if (locked) {
+        this.setCursorFree(false);
         this.lockTime = performance.now();
         this.lookX = this.lookY = 0;
         this.onLockGained?.();
@@ -169,8 +185,8 @@ export class InputManager {
     this.canvas = null;
   }
 
-  requestLock(): void {
-    if (!this.canvas || this.touch.active) return;
+  requestLock(force = false): void {
+    if (!this.canvas || this.touch.active || (this.cursorFree && !force)) return;
     try {
       const p = (this.canvas as HTMLCanvasElement).requestPointerLock?.() as unknown as Promise<void> | undefined;
       if (p && typeof p.catch === 'function') p.catch(() => { /* user must click again (browser cooldown) */ });
@@ -183,11 +199,20 @@ export class InputManager {
     if (document.pointerLockElement) document.exitPointerLock();
   }
 
+  setCursorFree(free: boolean): void {
+    if (this.cursorFree === free) return;
+    this.cursorFree = free;
+    this.clearHeld();
+    this.endFrame();
+    this.onCursorChange?.(free);
+  }
+
   private code(action: Action): string {
     return useSettingsStore.getState().controls.keys[action];
   }
 
   isDown(action: Action): boolean {
+    if (this.cursorFree && ['forward', 'back', 'left', 'right', 'jump', 'sprint', 'crouch'].includes(action)) return false;
     if (action === 'crouch' && this.captureShortcuts) return false; // Ctrl is for shortcuts in Build Home
     const c = this.code(action);
     if (this.down.has(c)) return true;
@@ -220,6 +245,7 @@ export class InputManager {
 
   /** Movement vector from keys + virtual joystick: x = strafe, y = forward. */
   moveVector(): { x: number; y: number } {
+    if (this.cursorFree) return { x: 0, y: 0 };
     let x = 0, y = 0;
     if (this.isDown('forward')) y += 1;
     if (this.isDown('back')) y -= 1;

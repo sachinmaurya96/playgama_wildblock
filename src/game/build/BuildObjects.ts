@@ -135,6 +135,8 @@ export class BuildObjects {
   readonly group = new THREE.Group();
   readonly objects = new Map<number, PlacedObject>();
   nextId = 1;
+  /** Changes to object occupancy, including remote edits and undo/redo. */
+  revision = 0;
   private buckets = new Map<string, Bucket>();
   private objBuckets = new Map<number, Bucket[]>();
   private grid = new Map<number, Set<number>>();
@@ -180,6 +182,7 @@ export class BuildObjects {
     this.attach(o);
     this.index(o);
     if (def.interaction === 'label') this.updateLabel(o);
+    this.revision++;
     this.onChanged?.();
     if (!this.remote) this.onOp?.({ k: 'add', o: toSave(o) });
     return o;
@@ -199,6 +202,7 @@ export class BuildObjects {
       s.material.dispose();
       this.labelSprites.delete(id);
     }
+    this.revision++;
     this.onChanged?.();
     if (!this.remote) this.onOp?.({ k: 'del', id });
     return o;
@@ -227,6 +231,7 @@ export class BuildObjects {
     }
     this.boxCache.delete(id);
     if (o.def.interaction === 'label') this.updateLabel(o);
+    this.revision++;
     this.onChanged?.();
     if (!this.remote) this.onOp?.({ k: 'set', id, p: { ...patch } });
     return o;

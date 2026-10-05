@@ -39,7 +39,7 @@ export const BUILD_CONTROLS: [string, string][] = [
   ['Ctrl+C / Ctrl+V', 'Copy area / Paste'],
   ['Ctrl+S', 'Save now'],
   ['C', 'Build camera on / off'],
-  ['Tab', 'Cursor mode (aim with the mouse)'],
+  ['Tab', 'Free cursor for UI options · press again to return to mouse-look'],
   ['G', 'Grid on / off'],
   ['H', 'Hide / show hints'],
   ['F9', 'Walkthrough mode'],

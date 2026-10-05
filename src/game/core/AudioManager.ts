@@ -2,6 +2,7 @@ import type * as THREE from 'three';
 import type { SoundMaterial } from '../../data/blocks';
 import type { CreatureKind } from '../../data/creatures';
 import type { Settings } from '../../stores/settingsStore';
+import { AudioRecovery } from './AudioRecovery';
 
 /**
  * Fully procedural audio (Web Audio API): every sound effect, ambience layer
@@ -61,6 +62,8 @@ class MusicLayer {
   schedule() {
     if (this.stopped) return;
     const ctx = this.am.ctx!;
+    // Background timer throttling must not queue minutes of expired notes at once.
+    if (this.nextTime < ctx.currentTime - 0.4) this.nextTime = ctx.currentTime + 0.02;
     const cfg = SCALES[this.mood];
     const beat = 60 / cfg.tempo / 2; // eighth notes
     while (this.nextTime < ctx.currentTime + 0.4) {
@@ -107,11 +110,12 @@ export class AudioManager {
   private lastPlay = new Map<string, number>();
   private volumes: Settings['audio'] | null = null;
   private stinger = 0;
+  private recovery: AudioRecovery | null = null;
 
   /** Must be called from a user gesture (browser autoplay rules). Safe to call repeatedly. */
   init(): void {
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') void this.ctx.resume();
+      this.recovery?.wake();
       return;
     }
     const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -122,6 +126,7 @@ export class AudioManager {
       return;
     }
     const ctx = this.ctx;
+    this.recovery = new AudioRecovery(ctx);
     this.master = ctx.createGain();
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14;
@@ -152,9 +157,11 @@ export class AudioManager {
     this.amb.cave = this.loopNoise(this.brown, 'lowpass', 180, 0.8);
     if (this.volumes) this.applyVolumes(this.volumes);
     this.musicTimer = setInterval(() => {
+      if (ctx.state !== 'running') return;
       for (const l of this.layers) l.schedule();
       this.layers = this.layers.filter((l) => !l.stopped);
     }, 120);
+    this.recovery.wake();
   }
 
   get ready(): boolean {
@@ -561,16 +568,18 @@ export class AudioManager {
   }
 
   suspend(): void {
-    void this.ctx?.suspend();
+    this.recovery?.suspend();
   }
 
   resume(): void {
-    void this.ctx?.resume();
+    this.recovery?.resume();
   }
 
   dispose(): void {
     if (this.musicTimer) clearInterval(this.musicTimer);
-    void this.ctx?.close();
+    this.recovery?.dispose();
+    this.recovery = null;
+    void this.ctx?.close().catch(() => {});
     this.ctx = null;
   }
 }

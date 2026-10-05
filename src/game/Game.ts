@@ -204,6 +204,7 @@ export class Game {
         if (s.audio !== prev.audio) this.audio.applyVolumes(s.audio);
         if (s.gameplay.dayLengthMinutes !== prev.gameplay.dayLengthMinutes) this.clock.dayLength = s.gameplay.dayLengthMinutes * 60;
         if (s.gameplay.scarf !== prev.gameplay.scarf) this.player.refreshScarf();
+        if (s.gameplay.cameraMode !== prev.gameplay.cameraMode) this.player.cameraMode = s.gameplay.cameraMode;
       }),
     );
     this.audio.applyVolumes(settings.audio);
@@ -233,6 +234,12 @@ export class Game {
     }
     Game.current = this;
     gameRegistry.current = this;
+    useGameStore.setState({ cursorFree: false });
+    this.input.onCursorToggle = () => this.toggleCursor();
+    this.input.onCursorChange = (free) => {
+      useGameStore.setState({ cursorFree: free });
+      if (this.build) useBuildStore.getState().set({ cursorMode: free && !this.build.usesFreeCamera() });
+    };
     // Handy for debugging / automated play-tests: window.wildblocks.game
     (window as unknown as { wildblocks?: unknown }).wildblocks = {
       game: this,
@@ -589,6 +596,24 @@ export class Game {
     this.input.clearHeld();
   }
 
+  /** Desktop shortcut: release without pausing, or recapture from the same key gesture. */
+  toggleCursor(): boolean {
+    const gs = useGameStore.getState();
+    if (!this.ready || this.disposed || this.input.touch.active || gs.screen !== 'playing' || gs.overlay !== null) return false;
+    if (!this.input.cursorFree) {
+      this.input.setCursorFree(true);
+      this.releasePointer();
+    } else {
+      // Closing a quick-options panel must not immediately release the recaptured pointer.
+      if (this.pvp) usePvpStore.getState().set({ gearOpen: false });
+      if (this.dm) useDeathmatchStore.getState().set({ optionsOpen: false });
+      this.input.clearHeld();
+      this.input.endFrame();
+      this.input.requestLock(true);
+    }
+    return true;
+  }
+
   openOverlay(o: Overlay, station: StationKind | null = null): void {
     this.releasePointer();
     useGameStore.getState().setOverlay(o, station);
@@ -623,6 +648,10 @@ export class Game {
     if (gs.screen !== 'playing') return;
     const inp = this.input;
     const o = gs.overlay;
+    if (!this.build && inp.cursorFree && o === null && inp.keyPressed('Escape') && !(this.pvp && usePvpStore.getState().gearOpen) && !(this.dm && useDeathmatchStore.getState().optionsOpen)) {
+      this.openOverlay('pause');
+      return;
+    }
     if (this.build) {
       if (inp.keyPressed('Escape') && o !== null && o !== 'pause' && o !== 'death') {
         if (o === 'catalog') this.build.closeCatalog();
@@ -1324,5 +1353,6 @@ export class Game {
     usePlayerStore.getState().sync({ vitality: 100, energy: 100, buffs: [] });
     if (Game.current === this) Game.current = null;
     if (gameRegistry.current === this) gameRegistry.current = null;
+    useGameStore.setState({ cursorFree: false });
   }
 }

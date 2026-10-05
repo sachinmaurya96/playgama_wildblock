@@ -862,7 +862,7 @@ export class DeathmatchSession {
     }
 
     // keyboard / mouse / touch
-    const active = simulate && this.canMove;
+    const active = simulate && !inp.cursorFree && this.canMove;
     const wantAim = active && !!gun && (inp.mouseRight || this.touchAim) && !this.arsenal.reloading && !p.sprinting;
     this.aim += ((wantAim ? 1 : 0) - this.aim) * Math.min(1, dt * (gun === 'm24' ? 9 : 14));
     if (simulate && this.phase === 'playing') {

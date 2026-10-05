@@ -19,6 +19,7 @@ import { inviteCodeFromUrl, PvpScreen } from '../ui/MainMenu/PvpScreen';
 import { pvpNet } from '../net/pvpNet';
 import { dmInviteFromUrl, dmNet } from '../net/deathmatchNet';
 import { DeathmatchScreen } from '../ui/Deathmatch/DeathmatchScreen';
+import { voiceService } from '../net/voice';
 
 // The 3D engine (three.js + R3F) loads only when a world starts: menus appear instantly.
 const GameView = lazy(() => import('./GameView'));
@@ -41,17 +42,24 @@ export function App() {
     };
     window.addEventListener('pointerdown', unlock, { once: false });
     window.addEventListener('keydown', unlock, { once: false });
+    window.addEventListener('touchend', unlock);
+    window.addEventListener('pointerup', unlock);
+    window.addEventListener('click', unlock);
     // host page / tab visibility → pause + save
     platform.onPauseChange((paused) => {
       const g = gameRegistry.current;
       if (paused) {
         audio.suspend();
+        voiceService.current?.suspendAudio();
         // PvP keeps running in the background (the match doesn't stop for one player)
         if (g && !g.pvp && !g.dm && useGameStore.getState().screen === 'playing') {
           void g.saveNow('hidden');
           if (useGameStore.getState().overlay === null) g.openOverlay('pause');
         }
-      } else audio.resume();
+      } else {
+        audio.resume();
+        voiceService.current?.resumeAudio();
+      }
     });
     const beforeUnload = () => {
       pvpNet.current?.close(); // tell the other players right away
@@ -62,6 +70,9 @@ export function App() {
     return () => {
       window.removeEventListener('pointerdown', unlock);
       window.removeEventListener('keydown', unlock);
+      window.removeEventListener('touchend', unlock);
+      window.removeEventListener('pointerup', unlock);
+      window.removeEventListener('click', unlock);
       window.removeEventListener('pagehide', beforeUnload);
     };
   }, []);

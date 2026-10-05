@@ -5,6 +5,7 @@ import { Game } from '../../game/Game';
 import { touchEnabled } from '../../app/mobile';
 import { useGameStore } from '../../stores/gameStore';
 import { PlayWithFriends } from './PlayWithFriends';
+import { LocationPanel } from '../HUD/PvpHud';
 import { ACTION_LABELS, detectGyroDevice, GYRO_PROFILES, keyLabel, useSettingsStore, type Action, type GyroProfile, type GyroSettings, type QualityPreset } from '../../stores/settingsStore';
 
 type Tab = 'graphics' | 'audio' | 'controls' | 'gameplay' | 'accessibility';
@@ -30,6 +31,7 @@ export function SettingsScreen({ inGame = false }: { inGame?: boolean }) {
         </div>
         <div className="settings-body scroll">
           {inGame && <PlayWithFriends />}
+          {inGame && Game.current?.isBuild && <LocationPanel onDone={() => Game.current?.closeOverlay()} />}
           {tab === 'graphics' && <Graphics />}
           {tab === 'audio' && <Audio />}
           {tab === 'controls' && <Controls />}
@@ -289,13 +291,17 @@ function GyroSection() {
 
 function Gameplay() {
   const gp = useSettingsStore((s) => s.gameplay);
+  const keys = useSettingsStore((s) => s.controls.keys);
   const update = useSettingsStore((s) => s.update);
   return (
     <>
-      <Row label="Camera" hint="Toggle any time with V.">
+      <Row label="Camera" hint={`Toggle with ${keyLabel(Game.current?.build ? keys.buildView : keys.camera)}.`}>
         <div className="seg">
           {(['first', 'third'] as const).map((p) => (
-            <button key={p} className={`seg-btn ${gp.cameraMode === p ? 'active' : ''}`} onClick={() => update('gameplay', { cameraMode: p })}>
+            <button key={p} className={`seg-btn ${gp.cameraMode === p ? 'active' : ''}`} onClick={() => {
+              if (Game.current?.build) Game.current.build.setPlayerView(p);
+              else update('gameplay', { cameraMode: p });
+            }}>
               {p === 'first' ? 'First person' : 'Third person'}
             </button>
           ))}

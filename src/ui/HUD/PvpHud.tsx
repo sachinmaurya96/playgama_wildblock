@@ -217,7 +217,7 @@ function Radar() {
 
 /**
  * ⚙️ quick options: camera view, controls, voice, scoreboard, invite, settings and exit.
- * kind 'build' = Build Home with friends (its own camera & tools: no camera / respawn / teleport rows).
+ * kind 'build' = Build Home with friends (its own camera & tools).
  */
 function GearPanel({ kind = 'pvp' }: { kind?: 'pvp' | 'build' }) {
   const build = kind === 'build';
@@ -230,6 +230,7 @@ function GearPanel({ kind = 'pvp' }: { kind?: 'pvp' | 'build' }) {
   const touch = !!Game.current?.input.touch.active;
   const setCamera = (mode: 'first' | 'third') => {
     const g = Game.current;
+    if (g?.build) return g.build.setPlayerView(mode);
     if (g) g.player.cameraMode = mode;
     useSettingsStore.getState().update('gameplay', { cameraMode: mode });
   };
@@ -249,17 +250,17 @@ function GearPanel({ kind = 'pvp' }: { kind?: 'pvp' | 'build' }) {
         <b>⚙️ Options{!touch && <small className="muted"> · {keyLabel(keys.options)} / Esc to close</small>}</b>
         <button className="gear-x" onClick={back} aria-label="Close options">✕</button>
       </div>
-      {!build && <div className="gear-row">
-        <span>👁️ Camera</span>
+      <div className="gear-row">
+        <span>👁️ Camera{build && !touch && <small> · {keyLabel(keys.buildView)}</small>}</span>
         <div className="seg">
           <button className={`seg-btn ${camera === 'first' ? 'active' : ''}`} onClick={() => setCamera('first')}>1st person</button>
           <button className={`seg-btn ${camera === 'third' ? 'active' : ''}`} onClick={() => setCamera('third')}>3rd person</button>
         </div>
-      </div>}
+      </div>
       {!build && <QuickRespawn onDone={back} />}
       {touch && !build && <GyroRow />}
       <VoicePanel keys={!build} />
-      {!build && <LocationPanel onDone={back} />}
+      <LocationPanel onDone={back} />
       <button className="btn small" onClick={() => setHelp(!help)}>🎮 Controls</button>
       {help && (
         <div className="gear-help">
@@ -292,6 +293,7 @@ function GearPanel({ kind = 'pvp' }: { kind?: 'pvp' | 'build' }) {
               <div><b>{keyLabel(keys.talk)}</b> talk · <b>{keyLabel(keys.listen)}</b> listen on / off (voice chat)</div>
             </>
           )}
+          {!touch && <div><b>{keyLabel(keys.cursor)}</b> free cursor / return to mouse-look</div>}
         </div>
       )}
       <button className="btn small" onClick={() => { close(); usePvpStore.getState().set({ scoreboardOpen: true }); }}>🏆 Players & scores</button>
@@ -338,19 +340,25 @@ function QuickRespawn({ onDone }: { onDone: () => void }) {
 
 /** Parse "x y z", "x, z", "x/y/z"… → numbers (2 = x z, 3 = x y z). */
 export function parseCoords(text: string): { x: number; y?: number; z: number } | null {
-  const n = (text.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+  const parts = text.trim().split(/[\s,\/]+/);
+  if (!parts.every((p) => /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(p))) return null;
+  const n = parts.map(Number);
+  if (!n.every(Number.isFinite)) return null;
   if (n.length === 2) return { x: n[0], z: n[1] };
   if (n.length === 3) return { x: n[0], y: n[1], z: n[2] };
   return null;
 }
 
 /** 📍 Coordinates: yours (copy to share), every player's (tap Go to join them) and a box to teleport anywhere. */
-function LocationPanel({ onDone }: { onDone: () => void }) {
+export function LocationPanel({ onDone }: { onDone: () => void }) {
   useTick();
   const [text, setText] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const build = Game.current?.build;
   const pvp = Game.current?.pvp;
-  const spots = pvp?.playerSpots() ?? [];
+  const pos = Game.current?.player.position;
+  const spots = pvp?.playerSpots() ?? (build && pos ? [{ id: 'self', name: 'You', color: '#fff', x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z), dist: 0, me: true }] : []);
   const me = spots.find((p) => p.me);
   const result = (why: string | null) => {
     if (why) setMsg(why);
@@ -370,6 +378,20 @@ function LocationPanel({ onDone }: { onDone: () => void }) {
       setMsg(`Your coordinates: ${t}`);
     }
   };
+  const teleport = async (x: number, z: number, y?: number) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const g = Game.current;
+      // Build Home needs its own collision checks and camera updates, even with friends.
+      const why = g?.build ? await g.build.navigation.teleportTo(x, z, y) : g?.pvp ? g.pvp.teleportTo(x, z, y) : 'Teleport is unavailable.';
+      result(why);
+    } catch {
+      setMsg('Teleport could not finish — please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="location-panel">
       <div className="gear-row">
@@ -385,21 +407,25 @@ function LocationPanel({ onDone }: { onDone: () => void }) {
           <span className="dot" style={{ background: p.color }} />
           <span className="vname">{p.name}</span>
           <small className="muted">{p.x} {p.y} {p.z} · {p.dist}m</small>
-          <button className="btn small" onClick={() => result(Game.current?.pvp?.teleportToPlayer(p.id) ?? null)}>Go</button>
+          <button className="btn small" disabled={busy} onClick={() => {
+            if (build) void teleport(p.x + (p.x <= 125 ? 2 : -2), p.z, p.y);
+            else result(Game.current?.pvp?.teleportToPlayer(p.id) ?? 'Teleport is unavailable.');
+          }}>Go</button>
         </div>
       ))}
-      {spots.length <= 1 && <small className="muted">Friends' coordinates show up here when they join.</small>}
+      {build && <small className="muted">X and Z: -128 to 127 · Y: 2 to 120. Leave Y out to land on the surface.</small>}
+      {pvp && spots.length <= 1 && <small className="muted">Friends' coordinates show up here when they join.</small>}
       <form
         className="loc-form"
         onSubmit={(e) => {
           e.preventDefault();
           const c = parseCoords(text);
           if (!c) return setMsg('Type coordinates like 120 64 -35 (or just 120 -35).');
-          result(Game.current?.pvp?.teleportTo(c.x, c.z, c.y) ?? null);
+          void teleport(c.x, c.z, c.y);
         }}
       >
-        <input className="search" inputMode="text" placeholder="x y z  (e.g. 120 64 -35)" value={text} onChange={(e) => setText(e.target.value)} aria-label="Coordinates to teleport to" />
-        <button type="submit" className="btn small primary">Teleport</button>
+        <input className="search" inputMode="text" placeholder={build ? 'x y z  (e.g. 20 41 -35)' : 'x y z  (e.g. 120 64 -35)'} value={text} onChange={(e) => setText(e.target.value)} aria-label="Coordinates to teleport to" disabled={busy} />
+        <button type="submit" className="btn small primary" disabled={busy}>{busy ? 'Loading…' : 'Teleport'}</button>
       </form>
       {msg && <small className="muted">{msg}</small>}
     </div>

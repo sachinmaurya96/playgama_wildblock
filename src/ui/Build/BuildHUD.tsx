@@ -6,7 +6,7 @@ import { CHALLENGES, challengeById } from '../../data/buildChallenges';
 import { Game } from '../../game/Game';
 import { markTutorialSeen, tutorialSeen, useBuildStore, type ToolOptions } from '../../stores/buildStore';
 import { useGameStore } from '../../stores/gameStore';
-import { useSettingsStore } from '../../stores/settingsStore';
+import { keyLabel, useSettingsStore } from '../../stores/settingsStore';
 import { touchEnabled } from '../../app/mobile';
 import { ItemIcon } from './BuildCatalog';
 
@@ -82,6 +82,8 @@ function TopBar() {
   const undoLabel = useBuildStore((s) => s.undoLabel);
   const redoLabel = useBuildStore((s) => s.redoLabel);
   const camera = useBuildStore((s) => s.camera);
+  const playerView = useSettingsStore((s) => s.gameplay.cameraMode);
+  const viewKey = useSettingsStore((s) => keyLabel(s.controls.keys.buildView));
   const grid = useBuildStore((s) => s.grid);
   const walkthrough = useBuildStore((s) => s.walkthrough);
   const flying = useBuildStore((s) => s.flying);
@@ -110,6 +112,9 @@ function TopBar() {
           </button>
         )}
         <button className={`btn small ${camera === 'build' ? 'on' : ''}`} title="Build camera (C)" onClick={() => build()?.setCamera(camera === 'build' ? 'player' : 'build')}>🎥 {camera === 'build' ? 'Build cam' : 'Walk'}</button>
+        <button className={`btn small ${playerView === 'third' ? 'on' : ''}`} aria-label="Switch first / third person" title={`Switch to ${playerView === 'first' ? 'third' : 'first'} person${touch ? '' : ` (${viewKey})`}`} onClick={() => build()?.togglePlayerView()}>
+          👁️ {playerView === 'first' ? '1st person' : '3rd person'}{!touch && <> <kbd>{viewKey}</kbd></>}
+        </button>
         <button className={`btn small ${walkthrough ? 'on' : ''}`} title="Walkthrough (F9)" onClick={() => build()?.setWalkthrough(!walkthrough)}>🚶</button>
         <button className={`btn small ${grid ? 'on' : ''}`} title="Grid (G)" onClick={() => set({ grid: !grid })}>#</button>
         <button className="btn small" title="Photo mode (F10)" onClick={() => build()?.togglePhoto()}>📷</button>
@@ -443,12 +448,14 @@ function QuickBar() {
 
 function Hints() {
   const collapsed = useBuildStore((s) => s.hintsCollapsed);
+  const viewKey = useSettingsStore((s) => keyLabel(s.controls.keys.buildView));
   const set = useBuildStore((s) => s.set);
   return (
     <div className={`bh-hints ${collapsed ? 'collapsed' : ''}`}>
       <button className="bh-hints-toggle" onClick={() => set({ hintsCollapsed: !collapsed })}>{collapsed ? '⌨️ Hints (H)' : 'Hide hints (H)'}</button>
       {!collapsed && (
         <div className="bh-hint-list">
+          <span><kbd>{viewKey}</kbd> First / third person</span>
           {BUILD_HINTS.map(([k, v]) => <span key={k}><kbd>{k}</kbd> {v}</span>)}
         </div>
       )}
@@ -459,10 +466,11 @@ function Hints() {
 function BuildCrosshair() {
   const camera = useBuildStore((s) => s.camera);
   const cursor = useBuildStore((s) => s.cursorMode);
+  const cursorFree = useGameStore((s) => s.cursorFree);
   const locked = usePointerLocked();
   const overlay = useGameStore((s) => s.overlay);
   const touch = useTouch();
-  if (cursor || overlay !== null) return null;
+  if (cursorFree || cursor || overlay !== null) return null;
   if (!touch && (camera === 'build' || !locked)) return null;
   return <div className="crosshair"><span className="dot" /></div>;
 }
@@ -470,10 +478,11 @@ function BuildCrosshair() {
 function BuildClickToPlay() {
   const camera = useBuildStore((s) => s.camera);
   const cursor = useBuildStore((s) => s.cursorMode);
+  const cursorFree = useGameStore((s) => s.cursorFree);
   const locked = usePointerLocked();
   const overlay = useGameStore((s) => s.overlay);
   const touch = useTouch();
-  if (locked || overlay !== null || camera === 'build' || cursor || touch) return null;
+  if (locked || cursorFree || overlay !== null || camera === 'build' || cursor || touch) return null;
   return (
     <button className="click-to-play" onClick={() => Game.current?.input.requestLock()}>
       <span className="ctp-card">

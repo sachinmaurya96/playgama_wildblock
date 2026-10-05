@@ -20,11 +20,13 @@ import { DeathmatchHud } from '../Deathmatch/DeathmatchHud';
 export function HUD() {
   const hidden = useGameStore((s) => s.hudHidden);
   const overlay = useGameStore((s) => s.overlay);
+  const cursorFree = useGameStore((s) => s.cursorFree);
   const mode = useGameStore((s) => s.world?.mode);
   if (mode === 'build')
     return (
       <div className="hud">
         <BuildHUD />
+        <CursorHint />
         <CoopBar />
         <Toasts />
         <DebugPanel />
@@ -34,6 +36,7 @@ export function HUD() {
     return (
       <div className="hud">
         <DeathmatchHud />
+        <CursorHint />
         <HurtVignette />
         <Toasts />
         <DebugPanel />
@@ -43,13 +46,14 @@ export function HUD() {
     <div className={`hud ${hidden ? 'hud-hidden' : ''} ${mode === 'pvp' ? 'pvp-hud' : ''}`}>
       {/* lowest layer: catches clicks on the 3D view only — the hotbar & objective stay clickable */}
       <ClickToPlay />
+      <CursorHint />
       {!hidden && (
         <>
           <Compass />
           <Vitals />
           {mode !== 'pvp' && <QuestPanel />}
           <Hotbar />
-          {overlay === null && <Crosshair />}
+          {overlay === null && !cursorFree && <Crosshair />}
           <ContextPrompt />
           <Subtitles />
           {mode !== 'pvp' && <HomeMarker />}
@@ -62,6 +66,14 @@ export function HUD() {
       <DebugPanel />
     </div>
   );
+}
+
+function CursorHint() {
+  const free = useGameStore((s) => s.cursorFree);
+  const overlay = useGameStore((s) => s.overlay);
+  const key = useSettingsStore((s) => keyLabel(s.controls.keys.cursor));
+  if (!free || overlay !== null) return null;
+  return <div className="cursor-hint">Cursor free · UI options only · press <kbd>{key}</kbd> to return to mouse-look</div>;
 }
 
 function Crosshair() {
@@ -383,7 +395,8 @@ function UnderwaterTint() {
 
 function ClickToPlay() {
   const overlay = useGameStore((s) => s.overlay);
-  const [locked, setLocked] = useState(true);
+  const cursorFree = useGameStore((s) => s.cursorFree);
+  const [locked, setLocked] = useState(() => typeof document !== 'undefined' && !!document.pointerLockElement);
   const touch = useSettingsStore((s) => s.controls.touch);
   useEffect(() => {
     const on = () => setLocked(!!document.pointerLockElement);
@@ -393,7 +406,7 @@ function ClickToPlay() {
   }, []);
   const pvp = useGameStore((s) => s.world?.mode === 'pvp');
   const isTouch = touchEnabled(touch);
-  if (locked || overlay !== null || isTouch) return null;
+  if (locked || cursorFree || overlay !== null || isTouch) return null;
   return (
     <button
       className="click-to-play"

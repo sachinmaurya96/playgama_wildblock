@@ -82,6 +82,7 @@ Dependencies were kept deliberately small. Two suggested packages were not neede
 | **1–9 / mouse wheel** | Select hotbar slot |
 | **Q** | Drop one (Ctrl+Q: whole stack) |
 | **V** | First / third-person camera |
+| **Backtick (below Esc)** | Free the cursor for UI options only; world clicks, movement and tools are blocked until pressed again (all desktop modes) |
 | **J** | Discovery Journal |
 | **M** | World map (drag, scroll, double-click to set a compass waypoint) |
 | **F2** | Hide HUD (photo mode) |
@@ -136,6 +137,8 @@ Choose **🏡 Build Home** on the main menu (the orange button under *New World*
 
 **Rules:** unlimited items, no hunger / damage / creatures / durability / crafting. The lot is perfectly flat, edged by a paved path and a hedge, with scenery (and a distant backdrop) beyond it.
 
+**Coordinates & teleport** — open *Pause → Settings → 📍 Location* to copy your position or enter `x y z` (or `x z` to land on the surface). Teleports stay within the lot (X/Z −128 to 127, Y 2 to 120), load the destination first, and clear blocks and furniture safely. The active camera follows you. Shared projects also offer this in ⚙️ Options, with friends' coordinates and **Go** buttons.
+
 **Build Catalog (B)** — categories on the left (Structure, Modern Architecture, Doors & Windows, Kitchen, Living Room, Bedroom, Bathroom, Office, Lighting, Decoration, Outdoor, Landscaping, Utility, Tools, Presets), items in the centre with rendered thumbnails, a preview with colour / material variants and ☆ favourite on the right, search on top (names, rooms, materials and tags), and Recent / Favourites along the bottom. Style palettes (Warm Minimal, Modern Dark, Scandinavian, Tropical Modern) suggest matching materials; they never build anything for you.
 
 **Tools** — everything goes through one undo history (150 steps; a whole room or roof is one step):
@@ -152,7 +155,7 @@ Choose **🏡 Build Home** on the main menu (the orange button under *New World*
 | Pool (K) · Pond | Excavated, tiled, with coping, steps and water. |
 | Landscape (L) | Raise, lower, flatten, paint ground (grass, soil, sand, gravel, stone, pavers, decking) with a 1/3/5/9 brush; tree, palm, bush and hedge stamps. |
 | Measure (N) · Copy (Ctrl+C) | Distances in metres · copy an area (auto height), paste with rotation (**Ctrl+V**), save it as a **blueprint** usable in every project, or delete it (big deletions ask first). |
-| Presets | Starter Modern Cabin, Modern One-Story Home, Two-Story Family Home, Lakeside Glass House, Cozy Cottage, Beach House on Stilts, Modern Villa with Pool, Mountain A-Frame Chalet, Tiny Modern House and Little Farmstead — placed with a ghost, rotatable, fully editable afterwards. |
+| Presets | Starter Modern Cabin, Modern One-Story Home, Two-Story Family Home, Lakeside Glass House, Cozy Cottage, Beach House on Stilts, Modern Villa with Pool, Mountain A-Frame Chalet, Tiny Modern House and Little Farmstead — placed with a ghost, rotatable, fully editable afterwards. Houses and pasted blueprints require a clear area: a red preview blocks overlaps with existing structures or furniture, including rooms and roof overhangs. Existing houses are protected after loading a saved project; undo restores the area. |
 
 **Flying:** double-tap **Space** or press **🕊️ Fly** in the top bar (touch: double-tap ⤒). Space / ⏫ goes up, Shift / ⏬ down, Ctrl (or the stick pushed fully) flies faster; touching down on the ground lands you.
 
@@ -160,7 +163,7 @@ Choose **🏡 Build Home** on the main menu (the orange button under *New World*
 
 **Farming (🌾 category):** six crops (each as "Growing 🌱" live seedlings or a fixed stage), tilled and watered soil, irrigation water, berry bushes, hay bales, picket fences and gates, scarecrow, water trough, wheelbarrow, beehive, compost bin, harvest crates, chicken coop, farm stand, a sliding barn door, fruit trees and a **Little Farmstead** template. The **🚜 Farm Plot** tool builds a whole field from two clicks — tilled soil, crop rows (one crop or mixed), a water channel every 4th row and an optional fence — as one undo step. Live crops grow by play time (4× faster than survival, faster on watered soil); click / tap a ripe crop to harvest it and it replants itself.
 
-**Views:** **C** toggles the free build camera (WASD fly, Q/E down/up, right-drag look, Alt+right-drag orbit, middle-drag pan, wheel zoom; the hand is hidden and C returns you to where you stood). **Tab** frees the cursor in the walking view. **F9** is walkthrough mode (tools hidden; **F** opens doors, switches lights, runs taps and showers). **F10** is photo mode with a time-of-day slider and weather. The time of day can be locked; weather can be set to clear, cloudy or rain. **G** toggles the grid, which follows the storey you are on and fades with distance. **H** collapses the hint panel. Double-tap **Space** to fly.
+**Views:** **F6** or the **👁️ 1st person / 3rd person** button switches the player perspective; the key can be changed in *Settings → Controls*. **C** toggles the free build camera (WASD fly, Q/E down/up, right-drag look, Alt+right-drag orbit, middle-drag pan, wheel zoom; the hand is hidden and C returns you to where you stood). **Tab** frees the cursor for UI options in the walking view; clicking the map cannot build, remove or select anything until you press Tab or backtick again. **F9** is walkthrough mode (tools hidden; **F** opens doors, switches lights, runs taps and showers). **F10** is photo mode with a time-of-day slider and weather. The time of day can be locked; weather can be set to clear, cloudy or rain. **G** toggles the grid, which follows the storey you are on and fades with distance. **H** collapses the hint panel. Double-tap **Space** to fly.
 
 **Lighting:** every lamp is a real light source, but only the 8 most relevant lights near the camera are active at once (the HUD shows the budget); light switches toggle the lights in their room.
 
