@@ -8,6 +8,7 @@ import { listBlueprints, saveBlueprint } from '../../persistence/SaveManager';
 import type { BlueprintRecord, BuildObjectSave, BuildStateSave } from '../../persistence/types';
 import { useBuildStore } from '../../stores/buildStore';
 import { useGameStore } from '../../stores/gameStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import type { Game } from '../Game';
 import { raycastBlocks, type BlockHit } from '../player/Raycast';
 import { previewGeometry } from '../rendering/BlockGeometry';
@@ -22,6 +23,8 @@ import { localIndex } from '../world/coordinates';
 import { LOT_HALF, PLOT_Y } from '../world/PlotGenerator';
 import { ckey } from '../world/World';
 import { BuildCamera } from './BuildCamera';
+import { BuildNavigation } from './BuildNavigation';
+import { PastePlacement, type PlacementClip as Clip } from './PastePlacement';
 import { BlockChangeCommand, BuildHistory, CompositeCommand, ObjectChangeCommand, type BlockChange, type BuildCommand, type EditTarget } from './BuildHistory';
 import { renderCatalogIcons } from './BuildIcons';
 import { BuildObjects, localBounds, rotatedAabb, toSave, type ObjectHit, type PlacedObject } from './BuildObjects';
@@ -58,13 +61,6 @@ interface Pose {
   support?: number;
 }
 
-interface Clip {
-  name: string;
-  size: [number, number, number];
-  blocks: [number, number, number, number, number][];
-  objects: Omit<BuildObjectSave, 'id'>[];
-}
-
 const EDIT_MARGIN = 3;
 const REACH_PLAYER = 12;
 const REACH_CAMERA = 220;
@@ -85,6 +81,8 @@ export class BuildMode implements EditTarget {
   readonly objects: BuildObjects;
   readonly history = new BuildHistory(150);
   readonly cam = new BuildCamera();
+  readonly navigation: BuildNavigation;
+  readonly pastePlacement: PastePlacement;
   readonly group = new THREE.Group();
   readonly omats: ObjectMaterials;
   private gmats: { valid: THREE.ShaderMaterial; invalid: THREE.ShaderMaterial };
@@ -129,9 +127,20 @@ export class BuildMode implements EditTarget {
   private seed = 1;
 
   constructor(private game: Game, save: BuildStateSave | undefined) {
+    this.navigation = new BuildNavigation(game, () => {
+      this.cancelPending();
+      this.endStroke();
+      this.target = null;
+      // Move both cameras so teleport works in build camera, photo mode and walkthrough.
+      this.cam.position.copy(game.player.eyePosition());
+      if (this.usesFreeCamera()) this.cam.apply(game.camera);
+      else game.player.updateCamera(game.camera, 1);
+      game.camera.updateMatrixWorld();
+    });
     this.omats = objectMaterials(game.assets.uniforms);
     this.gmats = createGhostMaterials(game.assets.uniforms);
     this.objects = new BuildObjects(game.world, this.omats);
+    this.pastePlacement = new PastePlacement(game.world, this.objects, inLot);
     this.group.name = 'build-mode';
     this.group.add(this.objects.group, this.blockGhost, this.areaGhost, this.pasteGhost);
     this.hoverMat = new THREE.LineBasicMaterial({ color: '#fff4c8', transparent: true, opacity: 0.85, depthTest: true });
@@ -201,6 +210,7 @@ export class BuildMode implements EditTarget {
   }
 
   dispose(): void {
+    this.navigation.dispose();
     for (const o of this.offs) o();
     this.clearGhosts();
     this.objects.dispose();
@@ -294,7 +304,7 @@ export class BuildMode implements EditTarget {
   }
 
   updateCamera(dt: number, camera: THREE.PerspectiveCamera, active: boolean): void {
-    if (active) {
+    if (active && !this.game.input.cursorFree) {
       this.cam.update(dt, this.game.input, () => this.target?.point.clone() ?? null);
       const p = this.cam.position;
       // keep the camera out of solid blocks and near the lot
@@ -306,7 +316,7 @@ export class BuildMode implements EditTarget {
   }
 
   focus(): THREE.Vector3 {
-    return this.usesFreeCamera() ? this.cam.position : this.game.player.position;
+    return this.navigation.target ?? (this.usesFreeCamera() ? this.cam.position : this.game.player.position);
   }
 
   setCamera(mode: 'player' | 'build'): void {
@@ -321,8 +331,8 @@ export class BuildMode implements EditTarget {
       g.audio.play('click');
     } else {
       // back to the player where they stood
-      st.set({ camera: 'player', cursorMode: false });
-      g.input.requestLock();
+      st.set({ camera: 'player', cursorMode: g.input.cursorFree && !st.photo });
+      if (useGameStore.getState().overlay === null) g.input.requestLock();
       g.audio.play('click');
     }
   }
@@ -330,9 +340,24 @@ export class BuildMode implements EditTarget {
   setCursorMode(on: boolean): void {
     const st = useBuildStore.getState();
     if (st.camera === 'build') return;
-    st.set({ cursorMode: on });
-    if (on) this.game.releasePointer();
-    else this.game.input.requestLock();
+    if (on) {
+      st.set({ cursorMode: true });
+      this.game.input.setCursorFree(true);
+      this.game.releasePointer();
+    } else this.game.input.requestLock(true);
+  }
+
+  /** Player perspective, available from the toolbar and its own shortcut (V selects objects). */
+  setPlayerView(mode: 'first' | 'third'): void {
+    const st = useBuildStore.getState();
+    if (st.photo) this.togglePhoto();
+    if (st.camera === 'build') this.setCamera('player');
+    this.game.player.cameraMode = mode;
+    useSettingsStore.getState().update('gameplay', { cameraMode: mode });
+  }
+
+  togglePlayerView(): void {
+    this.setPlayerView(this.game.player.cameraMode === 'first' ? 'third' : 'first');
   }
 
   /** Whether the canvas is aimed with the mouse cursor (free pointer) instead of the screen centre. */
@@ -409,6 +434,7 @@ export class BuildMode implements EditTarget {
   // ---------------------------------------------------------------- per frame
 
   update(dt: number, simulate: boolean): void {
+    this.navigation.update();
     const st = useBuildStore.getState();
     const gs = useGameStore.getState();
     const inp = this.game.input;
@@ -424,10 +450,12 @@ export class BuildMode implements EditTarget {
         st.set({ dayFraction: this.game.clock.dayFraction });
       }
     }
-    const canAct = simulate && gs.overlay === null && !st.photo && !this.game.player.waitingForGround;
+    const canAct = simulate && gs.overlay === null && !inp.cursorFree && !st.photo && !this.game.player.waitingForGround;
     if (!canAct) {
+      this.target = null;
       this.hideTransient();
       this.endStroke();
+      if (this.drag) this.endDrag(false);
       return;
     }
     // aim
@@ -530,8 +558,20 @@ export class BuildMode implements EditTarget {
       return;
     }
     if (overlay !== null) return;
+    if (inp.wasPressed('buildView') && !ctrl && !inp.alt) {
+      this.togglePlayerView();
+      return;
+    }
     if (st.photo) {
       if (inp.keyPressed('Escape')) this.togglePhoto();
+      return;
+    }
+    // With the UI cursor, only menus and view controls accept keyboard input.
+    if (inp.cursorFree) {
+      if (inp.keyPressed('Escape')) g.openOverlay('pause');
+      else if (inp.keyPressed('Tab')) this.setCursorMode(false);
+      else if (!ctrl && !inp.alt && inp.keyPressed('KeyC')) this.setCamera(st.camera === 'build' ? 'player' : 'build');
+      else if (!ctrl && !inp.alt && inp.keyPressed('F9')) this.setWalkthrough(!st.walkthrough);
       return;
     }
     // undo / redo & clipboard (modifier state captured at key-press time)
@@ -718,7 +758,7 @@ export class BuildMode implements EditTarget {
     this.cancelPending();
     this.select(null);
     if (on && st.camera === 'build') this.setCamera('player');
-    st.set({ walkthrough: on, cursorMode: false });
+    st.set({ walkthrough: on, cursorMode: this.game.input.cursorFree && !this.usesFreeCamera() });
     this.game.notify(on ? 'Walkthrough — explore your home. F opens doors & switches lights. F9 to keep building.' : 'Back to building', on ? '🚶' : '🛠️');
   }
 
@@ -732,8 +772,8 @@ export class BuildMode implements EditTarget {
       st.set({ photo: true, dayFraction: this.game.clock.dayFraction });
       useGameStore.setState({ hudHidden: false });
     } else {
-      st.set({ photo: false });
-      if (st.camera === 'player') this.game.input.requestLock();
+      st.set({ photo: false, cursorMode: this.game.input.cursorFree && st.camera === 'player' });
+      if (st.camera === 'player' && useGameStore.getState().overlay === null) this.game.input.requestLock();
     }
   }
 
@@ -2069,12 +2109,13 @@ export class BuildMode implements EditTarget {
     this.pasteGhost.position.set(origin.x, origin.y, origin.z);
     this.pasteGhost.visible = true;
     const [sx, , sz] = T.rotatedSize(c.size, this.pasteSteps);
-    const valid = inLot(origin.x, origin.z) && inLot(origin.x + sx - 1, origin.z + sz - 1);
+    const reason = this.pastePlacement.validate(c, origin, this.pasteSteps);
+    const valid = reason === null;
     this.setGhostTint(this.pasteGhost, valid);
-    useBuildStore.getState().set({ measure: `${c.name} · ${sx} × ${sz}${valid ? '' : ' · outside your lot'}` });
+    useBuildStore.getState().set({ measure: `${c.name} · ${sx} × ${sz}${reason ? ` · ${reason}` : ''}` });
     if (this.primaryPressed()) {
       if (!valid) {
-        this.flash('It doesn’t fit inside your lot there');
+        this.flash(reason!);
         this.game.audio.play('error');
         return;
       }
@@ -2083,6 +2124,13 @@ export class BuildMode implements EditTarget {
   }
 
   private commitPaste(c: Clip, origin: T.P3) {
+    // Recheck at the actual click, including changes received since the preview was shown.
+    const reason = this.pastePlacement.validate(c, origin, this.pasteSteps, true);
+    if (reason) {
+      this.flash(reason);
+      this.game.audio.play('error');
+      return;
+    }
     const ed = new T.Edits(this.reader(), 400000);
     T.pasteBlocks(ed, { size: c.size, blocks: c.blocks }, origin, this.pasteSteps);
     // clear furniture-sized space above the pasted floor (plants / grass tufts)
@@ -2093,11 +2141,7 @@ export class BuildMode implements EditTarget {
       const id = this.objects.nextId++;
       objs.push({ before: null, after: { id, itemId: o.itemId, x: round4(origin.x + rx), y: round4(origin.y + o.y), z: round4(origin.z + rz), rotation: normAngle(o.rotation - this.pasteSteps * (Math.PI / 2)), variantId: o.variantId, state: o.state ? { ...o.state } : undefined } });
     }
-    // objects already standing in the footprint would be buried: remove them as part of the same step
-    const [sx, sy, sz] = T.rotatedSize(c.size, this.pasteSteps);
-    const buried = this.objects.query(origin.x + 0.01, origin.y + 0.5, origin.z + 0.01, origin.x + sx - 0.01, origin.y + sy, origin.z + sz - 0.01);
     const parts: BuildCommand[] = [];
-    if (buried.length) parts.push(new ObjectChangeCommand(this, buried.map((o) => ({ before: toSave(o), after: null })), 'Clear space'));
     parts.push(new BlockChangeCommand(this, blocks, 'Paste blocks'));
     if (objs.length) parts.push(new ObjectChangeCommand(this, objs, 'Paste objects'));
     this.history.run(new CompositeCommand(parts, `Place ${c.name}`));

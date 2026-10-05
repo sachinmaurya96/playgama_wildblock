@@ -200,7 +200,7 @@ export class Player {
     input.gyro.configure(settings.controls.gyro, input.touch.active);
     if (!simulate) input.gyro.take(); // never save up a turn while paused
     // ---- look (also works while paused for smooth camera return, but only with pointer lock)
-    if (simulate) {
+    if (simulate && !input.cursorFree) {
       const sens = 0.0022 * settings.controls.sensitivity * this.lookScale;
       this.yaw -= input.lookX * sens;
       this.pitch -= input.lookY * sens * (settings.controls.invertY ? -1 : 1);

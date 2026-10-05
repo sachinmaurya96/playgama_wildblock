@@ -86,6 +86,7 @@ function PvpPause({ resume, onControls }: { resume: () => void; onControls: () =
 
 function BuildPause({ resume, quit, busy, onControls }: { resume: () => void; quit: () => void; busy: boolean; onControls: () => void }) {
   const world = useGameStore((s) => s.world);
+  const viewKey = useSettingsStore((s) => keyLabel(s.controls.keys.buildView));
   const tutorial = () => {
     try {
       localStorage.setItem('wildblocks.build.v1', JSON.stringify({ ...JSON.parse(localStorage.getItem('wildblocks.build.v1') ?? '{}'), tutorialSeen: false }));
@@ -102,6 +103,7 @@ function BuildPause({ resume, quit, busy, onControls }: { resume: () => void; qu
         <p className="muted">Build Home project · autosaves as you build</p>
         <div className="menu-buttons">
           <button className="btn build-home-btn" onClick={resume} autoFocus>Keep building</button>
+          <button className="btn" onClick={() => { Game.current?.build?.togglePlayerView(); resume(); }}>👁️ Switch first / third person ({viewKey})</button>
           <button className="btn" onClick={() => { useGameStore.getState().setOverlay(null); useBuildStore.getState().set({ walkthrough: false }); Game.current?.build?.setWalkthrough(true); Game.current?.input.requestLock(); }}>🚶 Walkthrough</button>
           <button className="btn" onClick={() => { useGameStore.getState().setOverlay(null); Game.current?.build?.togglePhoto(); }}>📷 Photo mode</button>
           {Game.current?.pvp ? (
@@ -140,6 +142,14 @@ export function ControlsCard({ onBack, build = false }: { onBack: () => void; bu
         <button className="close-x" onClick={onBack} aria-label="Back">✕</button>
         <h2 className="panel-title">⌨️ Controls</h2>
         <div className="controls-list scroll">
+          <div className="control-row">
+            <span className="kbd">{keyLabel(keys.cursor)}</span>
+            <span>{ACTION_LABELS.cursor}</span>
+          </div>
+          {build && <div className="control-row">
+            <span className="kbd">{keyLabel(keys.buildView)}</span>
+            <span>{ACTION_LABELS.buildView}</span>
+          </div>}
           {rows.map(([k, v]) => (
             <div key={v} className="control-row">
               <span className="kbd">{k}</span>

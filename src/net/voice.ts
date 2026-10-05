@@ -1,5 +1,7 @@
 import { iceServers, type NetMsg } from './transport';
 import { useVoiceStore, type VoiceScope } from '../stores/voiceStore';
+import { audio } from '../game/core/audio';
+import { AudioRecovery } from '../game/core/AudioRecovery';
 
 /**
  * Voice chat for every multiplayer mode (PvP, Build together, Build Home with
@@ -28,6 +30,7 @@ export type PushSource = 'key' | 'button';
 
 interface Link {
   pc: RTCPeerConnection;
+  call?: string;
   sender?: RTCRtpSender;
   audio?: HTMLAudioElement;
   source?: MediaStreamAudioSourceNode;
@@ -37,6 +40,8 @@ interface Link {
   level: Uint8Array<ArrayBuffer> | null;
   pendingIce: RTCIceCandidateInit[];
   initiator: boolean;
+  micNegotiated: boolean;
+  retry?: ReturnType<typeof setTimeout>;
 }
 
 const PROX_FULL = 6; // blocks: full volume inside this distance
@@ -79,10 +84,17 @@ export class VoiceChat {
   listen = false;
   /** 🎤 open mic switched on (tap-to-talk mode). */
   micOn = false;
+  private wantTalk = false;
   private stream: MediaStream | null = null;
   private micPending: Promise<boolean> | null = null;
   private ctx: AudioContext | null = null;
+  private recovery: AudioRecovery | null = null;
+  private audioPaused = false;
+  private disposed = false;
+  private micVersion = 0;
   private links = new Map<string, Link>();
+  private nextCall = 0;
+  private earlyIce = new Map<string, { call?: string; candidates: RTCIceCandidateInit[] }>();
   /** Players who announced they are in voice, with whether they listen / have a mic. */
   private inVoice = new Map<string, { ln: boolean; mic: boolean }>();
   private push = { key: false, button: false };
@@ -119,8 +131,14 @@ export class VoiceChat {
     const wake = () => this.unlockAudio();
     const evs = ['touchend', 'pointerup', 'click', 'keydown'];
     for (const t of evs) window.addEventListener(t, wake, true);
+    const blur = () => {
+      this.push.key = this.push.button = false;
+      this.applyTrackState();
+    };
+    window.addEventListener('blur', blur);
     this.gestureOff = () => {
       for (const t of evs) window.removeEventListener(t, wake, true);
+      window.removeEventListener('blur', blur);
     };
   }
 
@@ -130,13 +148,35 @@ export class VoiceChat {
    * can't start yet just starts on the next tap.
    */
   unlockAudio(): void {
+    if (this.disposed || this.audioPaused) return;
+    // Starting the mic can interrupt the game's separate audio context too.
+    audio.init();
     if (!this.ctx) {
       const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AC) return;
-      this.ctx = new AC();
+      try {
+        this.ctx = new AC();
+        this.recovery = new AudioRecovery(this.ctx);
+      } catch {
+        this.publish({ error: 'Voice audio could not start — try listening again.' });
+        return;
+      }
     }
-    if (this.ctx.state !== 'running') void this.ctx.resume().catch(() => {});
+    this.recovery?.wake();
     for (const l of this.links.values()) if (l.audio?.paused) void l.audio.play().catch(() => {});
+  }
+
+  suspendAudio(): void {
+    this.audioPaused = true;
+    this.push.key = this.push.button = false;
+    this.applyTrackState();
+    this.recovery?.suspend();
+  }
+
+  resumeAudio(): void {
+    this.audioPaused = false;
+    this.recovery?.resume();
+    if (this.on) this.unlockAudio();
   }
 
   private savePrefs() {
@@ -212,10 +252,13 @@ export class VoiceChat {
   /** Each link carries our mic only to the players we talk to (the others get silence). */
   private refreshSenders() {
     const track = this.stream?.getAudioTracks()[0] ?? null;
-    for (const [id, l] of this.links) {
+    for (const [id, l] of [...this.links]) {
       if (!l.sender || l.pc.connectionState !== 'connected') continue;
       const want = track && this.talksTo(id) ? track : null;
-      if (l.sender.track !== want) void l.sender.replaceTrack(want).catch(() => {});
+      // Safari needs the mic present in the handshake. This also covers switching
+      // from team-only to everyone after an opponent's link was negotiated silent.
+      if (want && !l.micNegotiated) this.rebuildLink(id, l);
+      else if (l.sender.track !== want) void l.sender.replaceTrack(want).catch(() => this.rebuildLink(id, l));
     }
   }
 
@@ -248,6 +291,7 @@ export class VoiceChat {
    * start on a later tap (waiting here used to leave the 🎧 / 🎤 buttons doing nothing on iPad / iPhone).
    */
   private connect(): void {
+    if (this.disposed) return;
     this.unlockAudio();
     if (this.on) return;
     this.on = true;
@@ -259,18 +303,29 @@ export class VoiceChat {
   /** Ask for the microphone once; afterwards it's switched on / off instantly. */
   private acquireMic(): Promise<boolean> {
     if (this.stream) return Promise.resolve(true);
-    this.micPending ??= (async () => {
+    if (this.micPending) return this.micPending;
+    const version = this.micVersion;
+    const pending = (async () => {
       let micError: string | null = null;
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error('unsupported');
         const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
-        if (!this.on) {
+        if (!this.on || this.disposed || version !== this.micVersion) {
           for (const t of stream.getTracks()) t.stop();
           return false;
         }
         this.stream = stream;
         const track = stream.getAudioTracks()[0];
+        if (!track || track.readyState === 'ended') {
+          for (const t of stream.getTracks()) t.stop();
+          throw new Error('No live microphone');
+        }
         track.enabled = false;
+        track.onended = () => {
+          if (this.stream !== stream) return;
+          this.releaseMic();
+          this.publish({ error: 'Microphone disconnected — tap Talk to reconnect it.' });
+        };
         if (this.ctx) {
           const src = this.ctx.createMediaStreamSource(stream);
           this.localAnalyser = this.ctx.createAnalyser();
@@ -281,14 +336,13 @@ export class VoiceChat {
         // Safari won't start sending on a link negotiated without a mic, so rebuild every link with the mic
         // on it from the start (the player who started a link rebuilds it; the other one asks them to)
         for (const [id, l] of [...this.links]) {
-          if (l.initiator) {
-            this.closeLink(id);
-            this.maybeConnect(id);
-          } else this.send({ t: 'v', id: this.selfId, to: id, kind: 'recall' });
+          this.rebuildLink(id, l);
         }
         // iOS pauses audio while it switches to "recording": wake it again (or on the next tap)
         this.unlockAudio();
       } catch (e) {
+        if (this.disposed || version !== this.micVersion) return false;
+        for (const t of this.stream?.getTracks() ?? []) t.stop();
         this.stream = null;
         const name = (e as Error)?.name ?? '';
         micError = name === 'NotAllowedError' ? 'Microphone blocked — you can still listen. Allow the mic in your browser to talk.' : !window.isSecureContext ? 'Talking needs the game on https:// — you can still listen.' : 'No microphone found — you can still listen.';
@@ -297,12 +351,14 @@ export class VoiceChat {
       this.applyTrackState();
       this.publish({ error: micError });
       return !!this.stream;
-    })().finally(() => (this.micPending = null));
-    return this.micPending;
+    })().finally(() => { if (this.micPending === pending) this.micPending = null; });
+    this.micPending = pending;
+    return pending;
   }
 
   /** 🎧 Listen on / off. Turning it on joins voice; with no mic in use, turning it off leaves voice. */
   async setListen(v: boolean): Promise<void> {
+    if (this.disposed) return;
     if (v) this.connect();
     this.listen = v;
     this.wantListen = v;
@@ -321,19 +377,27 @@ export class VoiceChat {
 
   /** 🎤 Tap-to-talk (open mic) on / off. */
   async toggleTalk(): Promise<void> {
-    if (this.micOn) {
+    if (this.disposed) return;
+    this.wantTalk = !this.wantTalk;
+    if (!this.wantTalk) {
       this.micOn = false;
       this.applyTrackState();
       return;
     }
     this.connect();
-    if (!(await this.acquireMic())) return;
+    const version = this.micVersion;
+    if (!(await this.acquireMic())) {
+      if (version === this.micVersion) this.wantTalk = false;
+      return;
+    }
+    if (!this.wantTalk || !this.on || this.disposed || version !== this.micVersion || this.mode !== 'open') return;
     this.micOn = true;
     this.applyTrackState();
   }
 
   /** Push-to-talk from the key (T) or the 🎤 button. The first press asks for the mic. */
   setPush(source: PushSource, held: boolean): void {
+    if (this.disposed) return;
     if (this.push[source] === held) return;
     this.push[source] = held;
     if (held && (!this.on || !this.stream)) {
@@ -345,12 +409,17 @@ export class VoiceChat {
 
   /** Stop using the microphone (the browser's recording indicator goes off). */
   releaseMic(): void {
+    this.micVersion++;
+    this.micPending = null;
     this.micOn = false;
+    this.wantTalk = false;
     this.push.key = this.push.button = false;
     for (const l of this.links.values()) void l.sender?.replaceTrack(null).catch(() => {});
     for (const t of this.stream?.getTracks() ?? []) t.stop();
     this.stream = null;
     this.localAnalyser = null;
+    this.localLevel = null;
+    this.unlockAudio();
     if (!this.listen) this.disable();
     else {
       this.announce();
@@ -360,14 +429,18 @@ export class VoiceChat {
 
   /** Leave voice completely: no listening, no mic. */
   disable(): void {
+    this.micVersion++;
+    this.micPending = null;
     this.listen = false;
     this.micOn = false;
+    this.wantTalk = false;
     this.push.key = this.push.button = false;
     if (this.on) {
       this.on = false;
       this.send({ t: 'vs', id: this.selfId, on: false });
     }
     for (const id of [...this.links.keys()]) this.closeLink(id);
+    this.earlyIce.clear();
     for (const t of this.stream?.getTracks() ?? []) t.stop();
     this.stream = null;
     this.localAnalyser = null;
@@ -377,6 +450,8 @@ export class VoiceChat {
   setMode(mode: VoiceMode): void {
     this.mode = mode;
     this.micOn = false;
+    this.wantTalk = false;
+    this.push.key = this.push.button = false;
     this.savePrefs();
     this.applyTrackState();
   }
@@ -402,6 +477,7 @@ export class VoiceChat {
 
   /** "vs": someone joined / left voice (or switched listening / mic). */
   handleState(msg: NetMsg): void {
+    if (this.disposed) return;
     const id = String(msg.id ?? '');
     if (!id || id === this.selfId) return;
     if (msg.on) {
@@ -411,6 +487,7 @@ export class VoiceChat {
       this.maybeConnect(id);
     } else {
       this.inVoice.delete(id);
+      this.earlyIce.delete(id);
       this.closeLink(id);
     }
     this.publish();
@@ -419,45 +496,68 @@ export class VoiceChat {
   /** "v": WebRTC offer / answer / ICE candidate for us. */
   async handleSignal(msg: NetMsg): Promise<void> {
     const from = String(msg.id ?? '');
-    if (!from || !this.on) return;
+    if (!from || from === this.selfId || !this.on || this.disposed || !this.inVoice.has(from)) return;
+    const call = typeof msg.call === 'string' ? msg.call : undefined;
+    let active: Link | undefined;
     try {
       if (msg.kind === 'offer') {
         this.closeLink(from);
-        const l = this.createLink(from, false);
+        const l = this.createLink(from, false, call);
+        active = l;
         await l.pc.setRemoteDescription(msg.sdp as RTCSessionDescriptionInit);
+        if (this.links.get(from) !== l) return;
         // answer on the offer's own audio channel, two-way, with our mic if we have one
         const tr = l.pc.getTransceivers().find((t) => t.receiver.track.kind === 'audio');
         if (tr) {
           tr.direction = 'sendrecv';
           l.sender = tr.sender;
-          const track = this.stream?.getAudioTracks()[0];
-          if (track) await tr.sender.replaceTrack(track);
+          const track = this.talksTo(from) ? this.stream?.getAudioTracks()[0] : null;
+          if (track) {
+            await tr.sender.replaceTrack(track);
+            l.micNegotiated = true;
+          }
         }
         await this.flushIce(l);
+        if (this.links.get(from) !== l) return;
         const answer = await l.pc.createAnswer();
+        if (this.links.get(from) !== l) return;
         await l.pc.setLocalDescription(answer);
-        this.send({ t: 'v', id: this.selfId, to: from, kind: 'answer', sdp: { type: answer.type, sdp: answer.sdp } });
+        if (this.links.get(from) !== l) return;
+        this.send({ t: 'v', id: this.selfId, to: from, kind: 'answer', call: l.call, sdp: { type: answer.type, sdp: answer.sdp } });
       } else if (msg.kind === 'answer') {
         const l = this.links.get(from);
-        if (l && l.pc.signalingState === 'have-local-offer') {
+        active = l;
+        if (l && (!call || l.call === call) && l.pc.signalingState === 'have-local-offer') {
           await l.pc.setRemoteDescription(msg.sdp as RTCSessionDescriptionInit);
           await this.flushIce(l);
         }
       } else if (msg.kind === 'recall') {
         // they just switched their mic on: rebuild our link to them so their voice comes through
-        if (this.links.get(from)?.initiator) {
+        if (this.selfId < from && this.inVoice.has(from)) {
           this.closeLink(from);
           this.maybeConnect(from);
         }
       } else if (msg.kind === 'ice') {
         const l = this.links.get(from);
         const c = msg.c as RTCIceCandidateInit;
-        if (!l || !c) return;
+        if (!c) return;
+        if (!l || (call && !l.initiator && l.call !== call)) {
+          let early = this.earlyIce.get(from);
+          if (!early || early.call !== call) {
+            early = { call, candidates: [] };
+            if (this.earlyIce.size >= 16) this.earlyIce.delete(this.earlyIce.keys().next().value!);
+            this.earlyIce.set(from, early);
+          }
+          if (early.candidates.length < 64) early.candidates.push(c);
+          return;
+        }
+        if (call && l.call !== call) return;
         if (l.pc.remoteDescription) await l.pc.addIceCandidate(c).catch(() => {});
         else l.pendingIce.push(c);
       }
     } catch (e) {
       console.warn('[WildBlocks voice]', e);
+      if (active && this.links.get(from) === active && active.pc.connectionState !== 'connected') this.retryLink(from, active);
     }
   }
 
@@ -467,51 +567,90 @@ export class VoiceChat {
 
   /** The player with the smaller id makes the call — never both at once. */
   private maybeConnect(id: string) {
-    if (!this.on || !this.inVoice.has(id) || this.links.has(id) || this.selfId > id) return;
+    if (!this.on || this.disposed || !this.inVoice.has(id) || this.links.has(id) || this.selfId > id) return;
     const l = this.createLink(id, true);
     void (async () => {
       try {
         const offer = await l.pc.createOffer();
+        if (this.links.get(id) !== l) return;
         await l.pc.setLocalDescription(offer);
-        this.send({ t: 'v', id: this.selfId, to: id, kind: 'offer', sdp: { type: offer.type, sdp: offer.sdp } });
+        if (this.links.get(id) !== l) return;
+        this.send({ t: 'v', id: this.selfId, to: id, kind: 'offer', call: l.call, sdp: { type: offer.type, sdp: offer.sdp } });
       } catch (e) {
         console.warn('[WildBlocks voice]', e);
+        this.retryLink(id, l);
       }
     })();
   }
 
-  private createLink(id: string, initiator: boolean): Link {
+  private createLink(id: string, initiator: boolean, call?: string): Link {
     const pc = new RTCPeerConnection({ iceServers: iceServers() });
-    const l: Link = { pc, level: null, pendingIce: [], initiator };
+    const l: Link = { pc, call: initiator ? `${this.selfId}:${++this.nextCall}` : call, level: null, pendingIce: [], initiator, micNegotiated: false };
+    const early = this.earlyIce.get(id);
+    if (early && early.call === l.call) l.pendingIce.push(...early.candidates);
+    this.earlyIce.delete(id);
     this.links.set(id, l);
     if (initiator) {
       // always a two-way audio channel, even before we have a mic (it's attached later with replaceTrack)
-      const track = this.stream?.getAudioTracks()[0];
+      const track = this.talksTo(id) ? this.stream?.getAudioTracks()[0] : null;
       const tr = track && this.stream ? pc.addTransceiver(track, { direction: 'sendrecv', streams: [this.stream] }) : pc.addTransceiver('audio', { direction: 'sendrecv' });
       l.sender = tr.sender;
+      l.micNegotiated = !!track;
     }
     pc.onicecandidate = (e) => {
-      if (e.candidate) this.send({ t: 'v', id: this.selfId, to: id, kind: 'ice', c: e.candidate.toJSON() });
+      if (this.links.get(id) === l && e.candidate) this.send({ t: 'v', id: this.selfId, to: id, kind: 'ice', call: l.call, c: e.candidate.toJSON() });
     };
     pc.ontrack = (e) => {
+      if (this.links.get(id) !== l) return;
       const stream = e.streams[0] ?? new MediaStream([e.track]);
       this.attachRemote(id, l, stream);
     };
     pc.onconnectionstatechange = () => {
+      if (this.links.get(id) !== l) return;
       // once the link is up, mute it if this player shouldn't hear us (team voice)
-      if (pc.connectionState === 'connected') this.refreshSenders();
-      if (pc.connectionState === 'failed') {
-        this.closeLink(id);
-        // try again in a moment (network hiccup)
-        setTimeout(() => this.maybeConnect(id), 3000);
+      if (pc.connectionState === 'connected') {
+        clearTimeout(l.retry);
+        l.retry = undefined;
+        this.refreshSenders();
+        this.unlockAudio();
       }
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') this.retryLink(id, l);
     };
+    // A lost offer / answer can otherwise leave this link stuck forever in "new".
+    this.retryLink(id, l, 15000);
     return l;
+  }
+
+  private retryLink(id: string, l: Link, delay = 3000): void {
+    if (this.links.get(id) !== l || this.disposed) return;
+    // A failure should shorten the initial handshake timeout.
+    if (delay === 15000 && l.retry) return;
+    clearTimeout(l.retry);
+    l.retry = setTimeout(() => {
+      l.retry = undefined;
+      if (!this.on || this.disposed || this.links.get(id) !== l || !this.inVoice.has(id) || l.pc.connectionState === 'connected') return;
+      this.rebuildLink(id, l);
+    }, delay);
+  }
+
+  private rebuildLink(id: string, l: Link): void {
+    if (this.disposed || !this.on || this.links.get(id) !== l || !this.inVoice.has(id)) return;
+    this.closeLink(id);
+    if (this.selfId < id) this.maybeConnect(id);
+    else {
+      // Keep a timeout while waiting, so a lost recall is retried as well.
+      this.createLink(id, false);
+      this.send({ t: 'v', id: this.selfId, to: id, kind: 'recall' });
+    }
   }
 
   private attachRemote(id: string, l: Link, stream: MediaStream) {
     const ctx = this.ctx;
     if (!ctx) return;
+    if (l.audio) {
+      l.audio.pause();
+      l.audio.srcObject = null;
+    }
     // Chrome only feeds remote WebRTC audio into Web Audio when it's also attached to a media element
     const a = new Audio();
     a.setAttribute('playsinline', '');
@@ -521,6 +660,9 @@ export class VoiceChat {
     void a.play().catch(() => {});
     l.audio = a;
     l.source?.disconnect();
+    l.analyser?.disconnect();
+    l.gain?.disconnect();
+    l.panner?.disconnect();
     l.source = ctx.createMediaStreamSource(stream);
     l.analyser = ctx.createAnalyser();
     l.analyser.fftSize = 256;
@@ -554,11 +696,17 @@ export class VoiceChat {
     const l = this.links.get(id);
     if (!l) return;
     this.links.delete(id);
+    clearTimeout(l.retry);
+    l.pc.onconnectionstatechange = l.pc.onicecandidate = l.pc.ontrack = null;
     try {
       l.source?.disconnect();
       l.gain?.disconnect();
       l.panner?.disconnect();
-      if (l.audio) l.audio.srcObject = null;
+      l.analyser?.disconnect();
+      if (l.audio) {
+        l.audio.pause();
+        l.audio.srcObject = null;
+      }
       l.pc.close();
     } catch {
       /* ignore */
@@ -568,6 +716,7 @@ export class VoiceChat {
   /** A player left the game. */
   drop(id: string): void {
     this.inVoice.delete(id);
+    this.earlyIce.delete(id);
     this.closeLink(id);
     this.publish();
   }
@@ -634,8 +783,12 @@ export class VoiceChat {
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     this.gestureOff?.();
     this.disable();
+    this.recovery?.dispose();
+    this.recovery = null;
     void this.ctx?.close().catch(() => {});
     this.ctx = null;
     if (voiceService.current === this) {

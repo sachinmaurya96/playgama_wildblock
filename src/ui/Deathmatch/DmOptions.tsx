@@ -79,6 +79,7 @@ export function DmOptions() {
               <div><b>Left click</b> / <b>F</b> fire · <b>Right click</b> aim / scope · <b>R</b> reload · <b>1–3</b> / wheel weapons · <b>Q</b> last weapon</div>
               <div><b>E</b> pick up · <b>4</b> / <b>5</b> medkits · <b>Tab</b> scores · <b>{keyLabel(keys.camera)}</b> camera</div>
               <div><b>{keyLabel(keys.talk)}</b> talk · <b>{keyLabel(keys.listen)}</b> listen · <b>{keyLabel(keys.options)}</b> this menu · <b>Esc</b> pause</div>
+              <div><b>{keyLabel(keys.cursor)}</b> free cursor / return to mouse-look</div>
             </>
           )}
         </div>

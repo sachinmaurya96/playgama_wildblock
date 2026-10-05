@@ -2,19 +2,23 @@ import { create } from 'zustand';
 
 export type Action =
   | 'forward' | 'back' | 'left' | 'right' | 'jump' | 'sprint' | 'crouch' | 'inventory' | 'interact' | 'camera'
-  | 'journal' | 'map' | 'drop' | 'hideHud' | 'options' | 'talk' | 'listen';
+  | 'journal' | 'map' | 'drop' | 'hideHud' | 'options' | 'talk' | 'listen' | 'cursor' | 'buildView';
 
 export const ACTION_LABELS: Record<Action, string> = {
   forward: 'Move forward', back: 'Move back', left: 'Strafe left', right: 'Strafe right', jump: 'Jump / swim up',
   sprint: 'Sprint', crouch: 'Crouch (edge-safe)', inventory: 'Backpack & crafting', interact: 'Interact / feed / pet',
   camera: 'Toggle camera', journal: 'Discovery journal', map: 'World map', drop: 'Drop item', hideHud: 'Hide HUD (photo)',
   options: 'Quick options (PvP)', talk: 'Voice: talk (PvP)', listen: 'Voice: listen on / off (PvP)',
+  cursor: 'Free cursor / return to mouse-look',
+  buildView: 'Build Home: first / third person',
 };
 
 export const DEFAULT_KEYS: Record<Action, string> = {
   forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', sprint: 'ShiftLeft', crouch: 'ControlLeft',
   inventory: 'KeyE', interact: 'KeyF', camera: 'KeyV', journal: 'KeyJ', map: 'KeyM', drop: 'KeyQ', hideHud: 'F2',
   options: 'KeyO', talk: 'KeyT', listen: 'KeyH',
+  cursor: 'Backquote',
+  buildView: 'F6',
 };
 
 /** Which device the gyro tuning is for ('auto' picks phone or tablet from the screen size). */

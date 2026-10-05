@@ -51,6 +51,8 @@ interface GameState {
   breakProgress: number;
   hudHidden: boolean;
   pointerLocked: boolean;
+  /** Desktop: the cursor was deliberately freed with its shortcut. */
+  cursorFree: boolean;
   lore: { title: string; text: string; index: number } | null;
   death: { cause: string; lost: number } | null;
   debug: DebugInfo | null;
@@ -97,6 +99,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   breakProgress: 0,
   hudHidden: false,
   pointerLocked: false,
+  cursorFree: false,
   lore: null,
   death: null,
   debug: null,

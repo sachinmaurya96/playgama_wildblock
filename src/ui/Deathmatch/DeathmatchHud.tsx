@@ -20,6 +20,7 @@ const clock = (s: number) => {
 /** Deathmatch in-match HUD (replaces the survival / PvP HUD in mode 'deathmatch'). */
 export function DeathmatchHud() {
   const hidden = useGameStore((s) => s.hudHidden);
+  const cursorFree = useGameStore((s) => s.cursorFree);
   const overlay = useGameStore((s) => s.overlay);
   const phase = useDeathmatchStore((s) => s.phase);
   const lobby = useDeathmatchStore((s) => s.lobby);
@@ -47,7 +48,7 @@ export function DeathmatchHud() {
           <KillFeed />
           <Health />
           <WeaponHud />
-          {overlay === null && <Crosshair />}
+          {overlay === null && !cursorFree && <Crosshair />}
           <Prompt />
           <Notice />
         </>
@@ -294,17 +295,18 @@ function DeathScreen() {
 
 function ClickToFight() {
   const overlay = useGameStore((s) => s.overlay);
+  const cursorFree = useGameStore((s) => s.cursorFree);
   const phase = useDeathmatchStore((s) => s.phase);
   const touch = useSettingsStore((s) => s.controls.touch);
   const options = useDeathmatchStore((s) => s.optionsOpen);
-  const [locked, setLocked] = useState(true);
+  const [locked, setLocked] = useState(() => typeof document !== 'undefined' && !!document.pointerLockElement);
   useEffect(() => {
     const on = () => setLocked(!!document.pointerLockElement);
     document.addEventListener('pointerlockchange', on);
     on();
     return () => document.removeEventListener('pointerlockchange', on);
   }, []);
-  if (locked || overlay !== null || options || touchEnabled(touch) || phase === 'ended') return null;
+  if (locked || cursorFree || overlay !== null || options || touchEnabled(touch) || phase === 'ended') return null;
   return (
     <button className="click-to-play" onClick={() => Game.current?.input.requestLock()}>
       <span className="ctp-card">
