@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { launchCoopHost, launchPvp } from '../../app/launch';
-import { Game } from '../../game/Game';
+import { gameRegistry } from '../../game/registry';
 import { PLOT_Y } from '../../game/world/PlotGenerator';
 import { hostRoom } from '../../net/pvpNet';
 import { useGameStore } from '../../stores/gameStore';
@@ -28,14 +28,18 @@ export function PlayWithFriends() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // already sharing (or a friend's lot): nothing to open
-  if ((mode !== 'survival' && mode !== 'build') || Game.current?.pvp) return null;
+  if ((mode !== 'survival' && mode !== 'build') || gameRegistry.current?.pvp) return null;
 
   const start = async () => {
-    const g = Game.current;
+    const g = gameRegistry.current;
     if (!g || busy) return;
     setError(null);
     setBusy('Saving your world…');
-    await g.saveNow('quit');
+    if (!(await g.saveNow('quit'))) {
+      setError('Your world could not be saved. Check browser storage and try again.');
+      setBusy(null);
+      return;
+    }
     // everything the match needs from this world, captured before it closes
     const mods = new Map<number, [number, number][]>([...g.world.mods].map(([k, m]) => [k, [...m.entries()]]));
     const objects = g.build ? g.build.objects.serialize() : [];
@@ -47,7 +51,7 @@ export function PlayWithFriends() {
     };
     const saved = load<Partial<PvpSettings>>('wb-pvp-settings', {});
     // Build Home: always building together, with everyone's full Build Home tools
-    const settings: PvpSettings = { ...DEFAULT_PVP_SETTINGS, ...saved, style: g.build ? 'together' : style, map: arena ?? 'wild', seedText: `world-${g.meta.id}`, source };
+    const settings: PvpSettings = { ...DEFAULT_PVP_SETTINGS, ...saved, minutes: 0, style: g.build ? 'together' : style, map: arena ?? 'wild', seedText: `world-${g.meta.id}`, source };
     const worldId = g.meta.id;
     const playerName = (name.trim() || 'Explorer').slice(0, 16);
     try {
@@ -77,8 +81,9 @@ export function PlayWithFriends() {
         <small className="muted">
           {mode === 'build'
             ? 'Friends join your lot in Build Home mode with the full catalog and tools. Everything anyone builds shows up for everyone and is saved in your project.'
-            : 'Opens a room on this map with everything you built. Friends join with the room code. Your save stays exactly as it is.'}
+            : 'Opens a room on this map with everything you built. Your save stays exactly as it is.'}
         </small>
+        <small className="muted">After opening, share the six-character code shown in the in-game room bar. Friends choose Main menu → Join Friend’s World and enter it. Use Online for other devices.</small>
       </div>
       {mode !== 'build' && (
         <div className="seg pf-style">

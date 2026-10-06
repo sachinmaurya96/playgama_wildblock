@@ -11,7 +11,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "validate:data": "tsx scripts/validate-data.ts"
+    "validate:data": "tsx scripts/validate-data.ts",
+    "docs:players": "tsx scripts/generate-player-guide.ts"
   },
   "dependencies": {
     "@react-three/fiber": "^9.8.1",

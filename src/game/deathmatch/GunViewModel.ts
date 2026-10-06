@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { part } from '../rendering/Models';
 import { GUNS, type GunId } from './WeaponDefinitions';
 import { buildGun } from './WeaponModels';
+import { Spring } from '../core/Spring';
 
 /**
  * First-person firearm: two arms holding the gun, rendered in its own pass on
@@ -11,22 +12,6 @@ import { buildGun } from './WeaponModels';
  * Every transform is rebuilt each frame from rest pose + springs + analytic
  * curves (recoil kick, reload, pump / bolt cycle, raise), so nothing drifts.
  */
-class Spring {
-  x = 0;
-  v = 0;
-  constructor(public omega: number) {}
-  step(target: number, dt: number): number {
-    let rem = dt;
-    while (rem > 0) {
-      const h = Math.min(rem, 1 / 60);
-      this.v += (this.omega * this.omega * (target - this.x) - 2 * this.omega * this.v) * h;
-      this.x += this.v * h;
-      rem -= h;
-    }
-    return this.x;
-  }
-}
-
 /** The gun models are built at world scale; in view space they're shrunk to sit naturally in the lower right. */
 const VIEW_SCALE = 0.42;
 const HIP = new THREE.Vector3(0.19, -0.17, -0.36);
@@ -74,6 +59,7 @@ export class GunViewModel {
   private flashT = 0;
   private cycleT = 1;
   private cycleLen = 0.5;
+  private base = new THREE.Vector3();
 
   constructor() {
     this.scene.add(this.camera);
@@ -142,8 +128,10 @@ export class GunViewModel {
     const dt = Math.min(0.1, i.dt);
     this.time += dt;
     this.scene.visible = i.visible && !!this.gun;
-    this.camera.aspect = i.aspect;
-    this.camera.updateProjectionMatrix();
+    if (this.camera.aspect !== i.aspect) {
+      this.camera.aspect = i.aspect;
+      this.camera.updateProjectionMatrix();
+    }
     if (!this.gun) return;
     const aim = i.aim;
     const m = this.moveAmt.step(i.grounded ? Math.min(1, i.speed / 5) : 0, dt);
@@ -173,8 +161,8 @@ export class GunViewModel {
       action.position.z = restZ + c * (this.gunId === 'shotgun' ? 0.12 : 0.08);
       if (this.gunId === 'shotgun' && rl > 0) action.position.z = restZ + Math.abs(Math.sin(rl * Math.PI * 6)) * 0.08;
     }
-    const base = HIP.clone().lerp(ADS, aim);
-    if (i.sprinting && aim < 0.1) base.add(new THREE.Vector3(-0.04, -0.04, 0.02));
+    const base = this.base.copy(HIP).lerp(ADS, aim);
+    if (i.sprinting && aim < 0.1) { base.x -= 0.04; base.y -= 0.04; base.z += 0.02; }
     this.holder.position.set(base.x + bx + sx, base.y + by + sy + r - tilt * 0.05, base.z + k * 0.04);
     this.holder.rotation.set(kr * 0.06 + tilt * 0.5 + (i.sprinting && aim < 0.1 ? -0.25 : 0), (1 - aim) * 0.04 + sx * 1.5, tilt * 0.6 + sx * 1.2);
     this.root.rotation.z = sx * 0.8;
@@ -186,5 +174,12 @@ export class GunViewModel {
     const l = 0.35 + i.light * 0.9;
     this.ambient.intensity = l * 1.2;
     this.sun.intensity = l * 1.2;
+  }
+
+  dispose(): void {
+    this.flash.geometry.dispose();
+    (this.flash.material as THREE.Material).dispose();
+    this.setGun(null);
+    this.scene.clear();
   }
 }

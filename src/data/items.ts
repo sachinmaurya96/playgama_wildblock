@@ -1,5 +1,6 @@
 import { BLOCK_DEFS } from './blocks';
 import { archIndex, archMeta } from './architecture';
+import { CREATURE_MEAT } from './creatureFood';
 import type { ToolKind } from './blocks';
 
 export type ItemCategory = 'block' | 'material' | 'tool' | 'weapon' | 'food' | 'seed' | 'equipment' | 'misc';
@@ -30,7 +31,7 @@ export interface DrawIcon {
     | 'seed' | 'berry' | 'apple' | 'coconut' | 'root' | 'herb' | 'gourd' | 'grain' | 'flour' | 'mushroom' | 'bowl' | 'pie'
     | 'bread' | 'mug' | 'mix' | 'axe' | 'pick' | 'shovel' | 'hoe' | 'club' | 'hammer' | 'spear' | 'blade' | 'can'
     | 'pack' | 'boots' | 'vest' | 'hood' | 'flint' | 'clay' | 'sword' | 'boat' | 'corn' | 'tomato' | 'hay'
-    | 'helmet' | 'chest' | 'leggings' | 'shield' | 'bow' | 'arrow' | 'hide' | 'fang';
+    | 'helmet' | 'chest' | 'leggings' | 'shield' | 'bow' | 'arrow' | 'hide' | 'fang' | 'meat' | 'bone';
   colors: string[];
 }
 
@@ -292,7 +293,20 @@ function blockDescription(cat?: string): string {
   }
 }
 
-export const ITEM_DEFS: ItemDef[] = [...blockItems(), ...HAND_ITEMS];
+const MEAT_ITEMS: ItemDef[] = CREATURE_MEAT.flatMap(([kind, name]) => [
+  { key: `raw_${kind}_meat`, name: `Raw ${name} Meat`, category: 'food', maxStack: 64,
+    description: `Meat from a ${name}. Cook it at a Cooking Fire for a better meal.`,
+    food: { vitality: 2, energy: 8 }, icon: { shape: 'meat', colors: ['#d97878', '#f5c5b5'] } },
+  { key: `cooked_${kind}_meat`, name: `Cooked ${name} Meat`, category: 'food', maxStack: 64,
+    description: `Fire-roasted ${name} meat. A filling meal for exploring.`,
+    food: { vitality: 18, energy: 30 }, icon: { shape: 'meat', colors: ['#a96435', '#e3bc7d'] } },
+]);
+
+export const ITEM_DEFS: ItemDef[] = [...blockItems(), ...HAND_ITEMS, ...MEAT_ITEMS,
+  { key: 'bone', name: 'Bone', category: 'material', maxStack: 64,
+    description: 'Left by a Skeleton. Can be crafted into arrow tips.',
+    icon: { shape: 'bone', colors: ['#e8dfca', '#bbae94'] }, journal: 'materials' },
+];
 
 const ITEM_MAP = new Map<string, ItemDef>();
 for (const d of ITEM_DEFS) {

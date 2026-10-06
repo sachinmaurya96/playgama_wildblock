@@ -80,6 +80,15 @@ export function drawIcon(c: Ctx, icon: DrawIcon): void {
   const [a, b] = icon.colors;
   c.clearRect(0, 0, 64, 64);
   switch (icon.shape) {
+    case 'meat':
+      blob(c, 31, 33, 22, 15, a, -0.55);
+      blob(c, 30, 32, 14, 8, b, -0.55);
+      blob(c, 30, 32, 9, 5, a, -0.55);
+      break;
+    case 'bone':
+      stick(c, 18, 47, 47, 18, 8, a);
+      for (const [x, y] of [[14, 44], [21, 50], [44, 14], [50, 21]]) blob(c, x, y, 6, 6, a);
+      break;
     case 'stick':
       stick(c, 16, 50, 48, 14, 6, a);
       stick(c, 34, 30, 42, 36, 3, b);

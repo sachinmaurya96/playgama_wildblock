@@ -1061,6 +1061,7 @@ export class DeathmatchSession {
     this.tracerMat.dispose();
     this.flashMat.dispose();
     this.ringGeo.dispose();
+    this.gunView.dispose();
     for (const m of this.boundary) {
       m.geometry.dispose();
       (m.material as THREE.Material).dispose();

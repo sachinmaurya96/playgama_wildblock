@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BUILD_CATALOG, BUILD_CATEGORIES, catalogItem, catalogSearchText, matchesTheme, THEMES, variantOf, type BuildCatalogItem } from '../../data/buildCatalog';
-import { catalogIcon } from '../../game/build/BuildIcons';
-import { Game } from '../../game/Game';
+import { catalogIcon } from '../../game/core/iconUrls';
+import { gameRegistry } from '../../game/registry';
 import { deleteBlueprint } from '../../persistence/SaveManager';
 import type { BlueprintRecord } from '../../persistence/types';
 import { useBuildStore, type CatalogView } from '../../stores/buildStore';
@@ -60,9 +60,9 @@ export function BuildCatalog() {
   }, [items, view, query]);
 
   const focused = focus ? catalogItem(focus) : undefined;
-  const close = () => Game.current?.build?.closeCatalog();
+  const close = () => gameRegistry.current?.build?.closeCatalog();
   const choose = (id: string, variant?: string) => {
-    Game.current?.build?.chooseItem(id, variant);
+    gameRegistry.current?.build?.chooseItem(id, variant);
     close();
   };
   const setView = (v: CatalogView) => {
@@ -137,7 +137,7 @@ export function BuildCatalog() {
                 {blueprints.length === 0 && <p className="muted small-note">Use the Copy tool to select part of a build, then “Save as blueprint” to reuse it in any project.</p>}
                 <div className="cat-grid">
                   {blueprints.map((b) => (
-                    <button key={b.id} className={`cat-tile ${focusBp?.id === b.id ? 'active' : ''}`} onClick={() => { if (focusBp?.id === b.id) { Game.current?.build?.placeBlueprint(b); close(); } else { setFocusBp(b); setFocus(null); } }} onDoubleClick={() => { Game.current?.build?.placeBlueprint(b); close(); }}>
+                    <button key={b.id} className={`cat-tile ${focusBp?.id === b.id ? 'active' : ''}`} onClick={() => { if (focusBp?.id === b.id) { gameRegistry.current?.build?.placeBlueprint(b); close(); } else { setFocusBp(b); setFocus(null); } }} onDoubleClick={() => { gameRegistry.current?.build?.placeBlueprint(b); close(); }}>
                       <span className="cat-emoji">📐</span>
                       <span className="cat-name">{b.name}</span>
                     </button>
@@ -149,7 +149,7 @@ export function BuildCatalog() {
           <aside className={`cat-preview ${focused || focusBp ? 'has-focus' : ''}`}>
             {(focused || focusBp) && <button className="close-x small cat-sheet-close" onClick={() => { setFocus(null); setFocusBp(null); }} aria-label="Close details">✕</button>}
             {focusBp ? (
-              <BlueprintPreview bp={focusBp} onPlace={() => { Game.current?.build?.placeBlueprint(focusBp); close(); }} onDelete={async () => {
+              <BlueprintPreview bp={focusBp} onPlace={() => { gameRegistry.current?.build?.placeBlueprint(focusBp); close(); }} onDelete={async () => {
                 await deleteBlueprint(focusBp.id);
                 set({ blueprints: blueprints.filter((b) => b.id !== focusBp.id) });
                 setFocusBp(null);

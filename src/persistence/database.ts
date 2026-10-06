@@ -18,6 +18,8 @@ interface WildDB extends DBSchema {
  */
 export interface Store {
   persistent: boolean;
+  /** Commit one complete save, including its previous-state backup. */
+  commitSave(meta: WorldMeta, state: WorldStateSave, chunks: ChunkModsRecord[], maps: MapTileRecord[], backup: boolean): Promise<void>;
   listWorlds(): Promise<WorldMeta[]>;
   getWorld(id: string): Promise<WorldMeta | undefined>;
   putWorld(m: WorldMeta): Promise<void>;
@@ -38,6 +40,29 @@ export interface Store {
 class IdbStore implements Store {
   persistent = true;
   constructor(private db: IDBPDatabase<WildDB>) {}
+  async commitSave(meta: WorldMeta, state: WorldStateSave, chunks: ChunkModsRecord[], maps: MapTileRecord[], backup: boolean) {
+    const tx = this.db.transaction(['worlds', 'states', 'chunks', 'maps', 'backups'], 'readwrite');
+    const writes: Promise<unknown>[] = [];
+    try {
+      const states = tx.objectStore('states');
+      if (backup) {
+        const prev = await states.get(meta.id);
+        if (prev) await tx.objectStore('backups').put(prev);
+      }
+      for (const c of chunks) writes.push(tx.objectStore('chunks').put(c));
+      for (const m of maps) writes.push(tx.objectStore('maps').put(m));
+      writes.push(states.put(state));
+      writes.push(tx.objectStore('worlds').put(meta));
+      await Promise.all(writes);
+      await tx.done;
+    } catch (e) {
+      try { tx.abort(); } catch { /* already aborted */ }
+      // A synchronous clone error can happen after earlier requests were
+      // queued. Observe their abort rejections too, not just the transaction.
+      await Promise.allSettled([...writes, tx.done]);
+      throw e;
+    }
+  }
   async listWorlds() {
     return (await this.db.getAll('worlds')).sort((a, b) => b.lastPlayed - a.lastPlayed);
   }
@@ -109,6 +134,16 @@ class MemoryStore implements Store {
   private maps = new Map<string, MapTileRecord>();
   private backups = new Map<string, WorldStateSave>();
   private blueprints = new Map<string, BlueprintRecord>();
+  async commitSave(meta: WorldMeta, state: WorldStateSave, chunks: ChunkModsRecord[], maps: MapTileRecord[], backup: boolean) {
+    // Clone before changing anything so a failed snapshot cannot partially save.
+    const snapshot = structuredClone({ meta, state, chunks, maps });
+    const prev = this.states.get(meta.id);
+    if (backup && prev) this.backups.set(meta.id, prev);
+    for (const c of snapshot.chunks) this.chunks.set(c.key, c);
+    for (const m of snapshot.maps) this.maps.set(m.key, m);
+    this.states.set(meta.id, snapshot.state);
+    this.worlds.set(meta.id, snapshot.meta);
+  }
   async getBackup(id: string) {
     const s = this.backups.get(id);
     return s ? structuredClone(s) : undefined;

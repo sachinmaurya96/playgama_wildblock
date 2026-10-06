@@ -42,7 +42,7 @@ export interface ObjAnim {
 
 export type ObjectPlacement = 'floor' | 'wall' | 'ceiling' | 'surface' | 'opening' | 'skylight';
 
-export type ObjectInteraction = 'door' | 'light' | 'tv' | 'appliance' | 'shower' | 'curtain' | 'switch' | 'label';
+export type ObjectInteraction = 'door' | 'light' | 'tv' | 'appliance' | 'shower' | 'curtain' | 'switch' | 'label' | 'bed' | 'sit';
 
 export interface ObjectDef {
   id: string;
@@ -59,6 +59,8 @@ export interface ObjectDef {
   variants?: { id: string; name: string; colors: Record<string, string> }[];
   anims?: ObjAnim[];
   interaction?: ObjectInteraction;
+  /** Top of the seat cushion, in local blocks. */
+  seatHeight?: number;
   /** Emits light when on: colour, strength, range (blocks), local offset. */
   light?: { color: string; intensity: number; range: number; offset: V3 };
   /** Wall cells cleared for doors & windows: width × height (in blocks), starting y0 blocks above the object origin. */
@@ -1452,6 +1454,16 @@ export const OBJECT_DEFS: ObjectDef[] = [
     slots: { dot: '#e0b23d' }, tags: ['label', 'room', 'name', 'sign'],
   },
 ];
+
+// Existing object IDs and saved states stay valid; rest actions come from definitions.
+for (const def of OBJECT_DEFS) {
+  if (def.interaction) continue;
+  if (def.tags.includes('sleep') && def.tags.includes('bed')) def.interaction = 'bed';
+  else if (def.tags.includes('chair') || def.tags.includes('seat')) {
+    def.interaction = 'sit';
+    def.seatHeight = def.id === 'bar_stool' ? 0.78 : def.id === 'lounge_bed' ? 0.35 : 0.5;
+  }
+}
 
 const DEF_MAP = new Map(OBJECT_DEFS.map((d) => [d.id, d]));
 

@@ -19,7 +19,9 @@ export const DEFAULT_MINUTES = 8;
 export const PREP_SECONDS = 10;
 export const RESPAWN_SECONDS = 5;
 export const PROTECT_SECONDS = 3;
-export const LOAD_TIMEOUT_SECONDS = 30;
+// Includes the first engine download and city generation on slower phones.
+// Players who finish earlier still start as soon as everyone is ready.
+export const LOAD_TIMEOUT_SECONDS = 90;
 
 const TRANSITIONS: Record<Phase, Phase[]> = {
   idle: ['lobby', 'aborted'],

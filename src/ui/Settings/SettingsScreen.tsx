@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { audio } from '../../game/core/audio';
 import { Gyro, isAppleMobile, type GyroStatus } from '../../game/core/Gyro';
-import { Game } from '../../game/Game';
+import { gameRegistry } from '../../game/registry';
 import { touchEnabled } from '../../app/mobile';
 import { useGameStore } from '../../stores/gameStore';
 import { PlayWithFriends } from './PlayWithFriends';
@@ -31,7 +31,7 @@ export function SettingsScreen({ inGame = false }: { inGame?: boolean }) {
         </div>
         <div className="settings-body scroll">
           {inGame && <PlayWithFriends />}
-          {inGame && Game.current?.isBuild && <LocationPanel onDone={() => Game.current?.closeOverlay()} />}
+          {inGame && gameRegistry.current?.isBuild && <LocationPanel onDone={() => gameRegistry.current?.closeOverlay()} />}
           {tab === 'graphics' && <Graphics />}
           {tab === 'audio' && <Audio />}
           {tab === 'controls' && <Controls />}
@@ -118,7 +118,7 @@ function Graphics() {
       <Row label="Clouds">
         <Toggle value={g.clouds} onChange={(v) => set({ clouds: v })} />
       </Row>
-      <Row label="Automatic quality" hint="Gently lowers render distance / resolution when frames drop.">
+      <Row label="Automatic quality" hint="Gradually lowers visual settings when sustained frame rate drops.">
         <Toggle value={g.autoQuality} onChange={(v) => update('graphics', { autoQuality: v })} />
       </Row>
     </>
@@ -203,12 +203,12 @@ function GyroSection() {
   const touchMode = useSettingsStore((s) => s.controls.touch);
   const update = useSettingsStore((s) => s.update);
   const [err, setErr] = useState<string | null>(null);
-  const [status, setStatus] = useState<GyroStatus>(() => Game.current?.input.gyro.status ?? 'off');
+  const [status, setStatus] = useState<GyroStatus>(() => gameRegistry.current?.input.gyro.status ?? 'off');
   const set = (p: Partial<GyroSettings>) => update('controls', { gyro: { ...useSettingsStore.getState().controls.gyro, ...p } });
   const detected = detectGyroDevice();
   const touch = touchEnabled(touchMode);
   useEffect(() => {
-    const id = setInterval(() => setStatus(Game.current?.input.gyro.status ?? 'off'), 400);
+    const id = setInterval(() => setStatus(gameRegistry.current?.input.gyro.status ?? 'off'), 400);
     return () => clearInterval(id);
   }, []);
   const enable = async (on: boolean) => {
@@ -231,7 +231,7 @@ function GyroSection() {
         ? '✅ Gyro is working — turn your device to aim.'
         : status === 'unsupported'
           ? '⚠️ No motion data from this device (no gyroscope, or blocked by the browser).'
-          : Game.current
+          : gameRegistry.current
             ? '⏳ Waiting for motion data…'
             : 'Starts when you are in a world.';
   return (
@@ -295,11 +295,11 @@ function Gameplay() {
   const update = useSettingsStore((s) => s.update);
   return (
     <>
-      <Row label="Camera" hint={`Toggle with ${keyLabel(Game.current?.build ? keys.buildView : keys.camera)}.`}>
+      <Row label="Camera" hint={`Toggle with ${keyLabel(gameRegistry.current?.build ? keys.buildView : keys.camera)}.`}>
         <div className="seg">
           {(['first', 'third'] as const).map((p) => (
             <button key={p} className={`seg-btn ${gp.cameraMode === p ? 'active' : ''}`} onClick={() => {
-              if (Game.current?.build) Game.current.build.setPlayerView(p);
+              if (gameRegistry.current?.build) gameRegistry.current.build.setPlayerView(p);
               else update('gameplay', { cameraMode: p });
             }}>
               {p === 'first' ? 'First person' : 'Third person'}

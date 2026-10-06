@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { itemDef } from '../../data/items';
 import { QUESTS } from '../../data/progression';
-import { Game } from '../../game/Game';
+import { gameRegistry } from '../../game/registry';
 import { touchEnabled } from '../../app/mobile';
 import { useGameStore } from '../../stores/gameStore';
 import { HOTBAR_SIZE, useInventoryStore } from '../../stores/inventoryStore';
@@ -16,16 +16,19 @@ import { CoopBar, PvpHud } from './PvpHud';
 import { usePvpStore } from '../../stores/pvpStore';
 import { armorStats } from '../../game/player/Player';
 import { DeathmatchHud } from '../Deathmatch/DeathmatchHud';
+import { RestActions } from './RestActions';
 
 export function HUD() {
   const hidden = useGameStore((s) => s.hudHidden);
   const overlay = useGameStore((s) => s.overlay);
   const cursorFree = useGameStore((s) => s.cursorFree);
   const mode = useGameStore((s) => s.world?.mode);
+  const shared = usePvpStore((s) => s.active);
   if (mode === 'build')
     return (
-      <div className="hud">
+      <div className={`hud ${shared ? 'build-coop-hud' : ''}`}>
         <BuildHUD />
+        <RestActions />
         <CursorHint />
         <CoopBar />
         <Toasts />
@@ -55,6 +58,7 @@ export function HUD() {
           <Hotbar />
           {overlay === null && !cursorFree && <Crosshair />}
           <ContextPrompt />
+          <RestActions />
           <Subtitles />
           {mode !== 'pvp' && <HomeMarker />}
         </>
@@ -215,7 +219,7 @@ function Compass() {
     const W = 320;
     const loop = () => {
       raf = requestAnimationFrame(loop);
-      const g = Game.current;
+      const g = gameRegistry.current;
       if (!g || !stripRef.current) return;
       // heading: 0 = north (-Z), clockwise
       const heading = ((-g.player.yaw * 180) / Math.PI + 360 * 10) % 360;
@@ -346,7 +350,7 @@ function HomeMarker() {
     let raf = 0;
     const loop = () => {
       raf = requestAnimationFrame(loop);
-      const g = Game.current;
+      const g = gameRegistry.current;
       const el = ref.current;
       if (!g || !el) return;
       const ws = useWorldStore.getState();
@@ -411,7 +415,7 @@ function ClickToPlay() {
     <button
       className="click-to-play"
       onClick={() => {
-        const g = Game.current;
+        const g = gameRegistry.current;
         if (g?.pvp && usePvpStore.getState().gearOpen) g.setPvpOptions(false);
         else g?.input.requestLock();
       }}

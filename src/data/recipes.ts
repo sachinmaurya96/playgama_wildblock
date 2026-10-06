@@ -1,4 +1,5 @@
 import type { StationKind } from './blocks';
+import { CREATURE_MEAT } from './creatureFood';
 
 export type RecipeCategory = 'Tools' | 'Weapons' | 'Armor' | 'Building' | 'Furniture' | 'Storage' | 'Lighting' | 'Cooking' | 'Farming' | 'Utility' | 'Exploration';
 
@@ -190,6 +191,10 @@ export const RECIPES: Recipe[] = [
   ...armorRecipes('copper', 'copper_ingot', 'rope', 'forge'),
   ...armorRecipes('tempered', 'tempered_ingot', 'copper_ingot', 'forge'),
   ...armorRecipes('crystal', 'glow_crystal', 'tempered_ingot', 'crystal_bench', 4),
+
+  // Append new recipes so existing recipe IDs remain stable in saved worlds.
+  ...CREATURE_MEAT.map(([kind]) => r(i(`cooked_${kind}_meat`), [i(`raw_${kind}_meat`)], 'cooking_fire', 'Cooking')),
+  r(i('arrow', 6), [i('stick', 2), i('bone'), i('fiber', 2)], null, 'Weapons'),
 ];
 
 /** Which block provides each station (for the validator and "where do I craft this?" hints). */

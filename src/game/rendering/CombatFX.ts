@@ -9,6 +9,7 @@ interface FloatText {
   sprite: THREE.Sprite;
   life: number;
   vy: number;
+  asset: TextAsset;
 }
 
 interface Bar {
@@ -20,12 +21,21 @@ interface Bar {
   timer: number;
 }
 
-const textCache = new Map<string, THREE.SpriteMaterial>();
+interface TextAsset { material: THREE.SpriteMaterial; users: number }
 
-function textMaterial(text: string, color: string, big: boolean): THREE.SpriteMaterial {
+function textMaterial(cache: Map<string, TextAsset>, text: string, color: string, big: boolean): TextAsset {
   const key = `${text}|${color}|${big}`;
-  let m = textCache.get(key);
-  if (m) return m;
+  const cached = cache.get(key);
+  if (cached) return cached;
+  if (cache.size >= 160) {
+    for (const [oldKey, asset] of cache) {
+      if (asset.users) continue;
+      asset.material.map?.dispose();
+      asset.material.dispose();
+      cache.delete(oldKey);
+      break;
+    }
+  }
   const c = document.createElement('canvas');
   const fs = big ? 52 : 40;
   c.width = 256;
@@ -41,16 +51,16 @@ function textMaterial(text: string, color: string, big: boolean): THREE.SpriteMa
   g.fillText(text, 128, 38);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  m = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, fog: false });
-  if (textCache.size > 160) textCache.clear();
-  textCache.set(key, m);
-  return m;
+  const asset = { material: new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, fog: false }), users: 0 };
+  cache.set(key, asset);
+  return asset;
 }
 
 export class CombatFX {
   readonly group = new THREE.Group();
   private texts: FloatText[] = [];
   private bars = new Map<string, Bar>();
+  private textCache = new Map<string, TextAsset>();
 
   constructor() {
     this.group.name = 'combat-fx';
@@ -59,14 +69,15 @@ export class CombatFX {
 
   /** Damage number (or a word like "Blocked!") rising from a point. */
   pop(text: string, x: number, y: number, z: number, color = '#ffffff', big = false): void {
-    const mat = textMaterial(text, color, big);
-    const sprite = new THREE.Sprite(mat.clone());
+    const asset = textMaterial(this.textCache, text, color, big);
+    asset.users++;
+    const sprite = new THREE.Sprite(asset.material.clone());
     const s = big ? 0.95 : 0.75;
     sprite.scale.set(s * 3.55, s, 1);
     sprite.position.set(x + (Math.random() - 0.5) * 0.4, y + 0.65, z + (Math.random() - 0.5) * 0.4);
     sprite.renderOrder = 11;
     this.group.add(sprite);
-    this.texts.push({ sprite, life: 0, vy: 1.3 });
+    this.texts.push({ sprite, life: 0, vy: 1.3, asset });
     if (this.texts.length > 40) this.drop(this.texts.shift()!);
   }
 
@@ -126,6 +137,7 @@ export class CombatFX {
   private drop(t: FloatText) {
     this.group.remove(t.sprite);
     t.sprite.material.dispose();
+    t.asset.users--;
   }
 
   update(dt: number): void {
@@ -151,5 +163,10 @@ export class CombatFX {
     for (const t of this.texts) this.drop(t);
     this.texts = [];
     for (const id of [...this.bars.keys()]) this.removeBar(id);
+    for (const asset of this.textCache.values()) {
+      asset.material.map?.dispose();
+      asset.material.dispose();
+    }
+    this.textCache.clear();
   }
 }

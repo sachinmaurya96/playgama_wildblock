@@ -96,6 +96,7 @@ export function App() {
       {screen === 'howto' && <HowToPlay />}
       {screen === 'credits' && <Credits />}
       {screen === 'pvp' && <PvpScreen />}
+      {screen === 'joinFriends' && <PvpScreen initialTab="join" />}
       {screen === 'deathmatch' && <DeathmatchScreen />}
       {!inGame && <Toasts />}
       <RotateHint />

@@ -36,7 +36,7 @@ export interface PvpSource {
 
 export interface PvpSettings {
   style: PvpStyle;
-  /** Match length in minutes (0 = no time limit). */
+  /** Legacy wire/save field. World rooms are untimed; only Deathmatch has a timer. */
   minutes: number;
   /** First to this many takedowns wins (0 = no limit). */
   killLimit: number;
@@ -53,7 +53,7 @@ export interface PvpSettings {
   source?: PvpSource;
 }
 
-export const DEFAULT_PVP_SETTINGS: PvpSettings = { style: 'battle', minutes: 10, killLimit: 15, kit: 'knight', map: 'wild', creatures: false, building: true, seedText: '' };
+export const DEFAULT_PVP_SETTINGS: PvpSettings = { style: 'battle', minutes: 0, killLimit: 15, kit: 'knight', map: 'wild', creatures: false, building: true, seedText: '' };
 
 export interface PvpPlayerInfo {
   id: string;
@@ -88,7 +88,7 @@ interface PvpState {
   timeLeft: number | null;
   phase: 'playing' | 'ended';
   winner: string | null;
-  /** Local player: respawn countdown (seconds) while dead, else 0. */
+  /** Retained for HUD compatibility; immediate shared-world respawns keep this at zero. */
   respawnIn: number;
   killedBy: string | null;
   scoreboardOpen: boolean;

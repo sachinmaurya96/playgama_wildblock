@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getStore, resetStoreForTests } from './database';
 import { createWorld, deleteWorld, listWorlds, loadWorldData, renameWorld, writeSave } from './SaveManager';
 import { migrateState } from './migrations';
@@ -174,6 +174,105 @@ describe('save system (IndexedDB)', () => {
       expect(loaded!.state!.player.x).toBe(11);
     } finally {
       console.error = origError;
+    }
+  });
+
+  it('retains failed block writes for retry instead of silently marking them saved', async () => {
+    const meta = await createWorld({ name: 'Retry', seedText: 'retry', difficulty: 'explorer', peacefulCreatures: false });
+    const world = new World(meta.seed);
+    world.addChunk(Chunk.empty(0, 0));
+    world.set(2, 20, 2, B.PLANKS);
+    const state = stateFrom(world, new ContainerSystem(), new FarmingSystem());
+    const store = await getStore();
+    const failure = vi.spyOn(store, 'commitSave').mockRejectedValueOnce(new Error('storage full'));
+    try {
+      await expect(writeSave(meta, state, world)).rejects.toThrow('storage full');
+      expect(world.dirtyMods.has(ckey(0, 0))).toBe(true);
+      await writeSave(meta, state, world);
+      expect(world.dirtyMods.size).toBe(0);
+      expect((await loadWorldData(meta.id))!.mods.get(ckey(0, 0))).toHaveLength(1);
+    } finally { failure.mockRestore(); }
+  });
+
+  it('keeps edits made during a save pending for the next save, including the same chunk', async () => {
+    const meta = await createWorld({ name: 'Concurrent', seedText: 'concurrent', difficulty: 'explorer', peacefulCreatures: false });
+    const world = new World(meta.seed);
+    world.addChunk(Chunk.empty(0, 0));
+    world.set(2, 20, 2, B.PLANKS);
+    const state = stateFrom(world, new ContainerSystem(), new FarmingSystem());
+    const store = await getStore();
+    const original = store.commitSave.bind(store);
+    let release!: () => void, started!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const entered = new Promise<void>((resolve) => { started = resolve; });
+    const delayed = vi.spyOn(store, 'commitSave').mockImplementationOnce(async (...args) => {
+      started(); await gate; return original(...args);
+    });
+    try {
+      const pending = writeSave(meta, state, world);
+      await entered;
+      world.set(2, 20, 2, B.STONE);
+      world.set(3, 20, 2, B.PLANKS);
+      release(); await pending;
+      expect(world.dirtyMods.has(ckey(0, 0))).toBe(true);
+      expect((await loadWorldData(meta.id))!.mods.get(ckey(0, 0))).toHaveLength(1);
+      await writeSave(meta, state, world);
+      const loaded = (await loadWorldData(meta.id))!;
+      const restored = new World(meta.seed);
+      for (const [k, changes] of loaded.mods) restored.loadMods(k, changes);
+      restored.addChunk(Chunk.empty(0, 0));
+      expect(restored.get(2, 20, 2)).toBe(B.STONE);
+      expect(restored.get(3, 20, 2)).toBe(B.PLANKS);
+      expect(world.dirtyMods.size).toBe(0);
+    } finally { release(); delayed.mockRestore(); }
+  });
+
+  it('rolls back state, edits and metadata together if a later write cannot be cloned', async () => {
+    const meta = await createWorld({ name: 'Atomic', seedText: 'atomic', difficulty: 'explorer', peacefulCreatures: false });
+    const world = new World(meta.seed);
+    world.addChunk(Chunk.empty(0, 0));
+    world.set(2, 20, 2, B.PLANKS);
+    const state = stateFrom(world, new ContainerSystem(), new FarmingSystem());
+    await writeSave(meta, state, world);
+    world.set(2, 20, 2, B.STONE);
+    const invalidMeta = Object.assign({}, meta, { name: 'Must not commit', uncloneable: () => {} });
+    await expect(writeSave(invalidMeta, { ...state, time: 9999 }, world)).rejects.toThrow();
+    const loaded = (await loadWorldData(meta.id))!;
+    expect(loaded.meta.name).toBe('Atomic');
+    expect(loaded.state!.time).toBe(state.time);
+    expect(loaded.mods.get(ckey(0, 0))![0][1] & 255).toBe(B.PLANKS);
+    expect(world.dirtyMods.has(ckey(0, 0))).toBe(true);
+    expect(await (await getStore()).getBackup(meta.id)).toBeUndefined();
+  });
+
+  it('keeps the temporary-memory backend atomic and recoverable when browser storage is blocked', async () => {
+    await resetStoreForTests();
+    vi.stubGlobal('indexedDB', undefined);
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const meta = await createWorld({ name: 'Temporary', seedText: 'temporary', difficulty: 'explorer', peacefulCreatures: false });
+      const store = await getStore();
+      expect(store.persistent).toBe(false);
+      const world = new World(meta.seed);
+      world.addChunk(Chunk.empty(0, 0));
+      world.set(2, 20, 2, B.PLANKS);
+      const state = stateFrom(world, new ContainerSystem(), new FarmingSystem());
+      await writeSave(meta, state, world);
+      world.set(2, 20, 2, B.STONE);
+      const invalidMeta = Object.assign({}, meta, { name: 'Must not commit', uncloneable: () => {} });
+      await expect(writeSave(invalidMeta, { ...state, time: 9999 }, world)).rejects.toThrow();
+      const loaded = (await loadWorldData(meta.id))!;
+      expect(loaded.meta.name).toBe('Temporary');
+      expect(loaded.state!.time).toBe(state.time);
+      expect(loaded.mods.get(ckey(0, 0))![0][1] & 255).toBe(B.PLANKS);
+      expect(world.dirtyMods.has(ckey(0, 0))).toBe(true);
+      await writeSave(meta, { ...state, time: 100 }, world);
+      expect((await store.getBackup(meta.id))!.time).toBe(state.time);
+      expect((await loadWorldData(meta.id))!.state!.time).toBe(100);
+    } finally {
+      warning.mockRestore();
+      vi.unstubAllGlobals();
+      await resetStoreForTests();
     }
   });
 });

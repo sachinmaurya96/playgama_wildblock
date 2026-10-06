@@ -3,14 +3,14 @@ import { ARCH_MATERIALS, archIndex } from '../../data/architecture';
 import { catalogItem, FARM_CROPS, FLOOR_MATERIALS, ROOF_MATERIALS, STRUCT_MATERIALS, WALL_MATERIALS, type BuildCatalogItem, type ToolId } from '../../data/buildCatalog';
 import { BUILD_HINTS } from '../../data/buildControls';
 import { CHALLENGES, challengeById } from '../../data/buildChallenges';
-import { Game } from '../../game/Game';
+import { gameRegistry } from '../../game/registry';
 import { markTutorialSeen, tutorialSeen, useBuildStore, type ToolOptions } from '../../stores/buildStore';
 import { useGameStore } from '../../stores/gameStore';
 import { keyLabel, useSettingsStore } from '../../stores/settingsStore';
 import { touchEnabled } from '../../app/mobile';
 import { ItemIcon } from './BuildCatalog';
 
-const build = () => Game.current?.build ?? null;
+const build = () => gameRegistry.current?.build ?? null;
 
 const TOOLS: { id: ToolId | 'catalog'; icon: string; name: string; key: string }[] = [
   { id: 'catalog', icon: '📚', name: 'Catalog', key: 'B' },
@@ -94,7 +94,7 @@ function TopBar() {
     const t = setInterval(() => tick((x) => x + 1), 10000);
     return () => clearInterval(t);
   }, []);
-  const guest = Game.current?.meta.coop === 'guest';
+  const guest = gameRegistry.current?.meta.coop === 'guest';
   const saved = guest ? "🤝 Friend's lot · saved by the host" : lastSaved ? `Saved ${ago(lastSaved)}` : 'Not saved yet';
   return (
     <div className="bh-top">
@@ -120,8 +120,8 @@ function TopBar() {
         <button className="btn small" title="Photo mode (F10)" onClick={() => build()?.togglePhoto()}>📷</button>
         <button className="btn small" title="Design challenge (optional)" onClick={() => set({ challenge: useBuildStore.getState().challenge ? null : CHALLENGES[0].id })}>🎯</button>
         <EnvButton />
-        <button className="btn small" title="Save (Ctrl+S)" onClick={() => void Game.current?.saveNow('pause')}>💾</button>
-        <button className="btn small" title="Menu (Esc)" onClick={() => Game.current?.openOverlay('pause')}>☰</button>
+        <button className="btn small" title="Save (Ctrl+S)" onClick={() => void gameRegistry.current?.saveNow('pause')}>💾</button>
+        <button className="btn small" title="Menu (Esc)" onClick={() => gameRegistry.current?.openOverlay('pause')}>☰</button>
       </div>
     </div>
   );
@@ -389,7 +389,7 @@ function SelectionPanel() {
         <button className="btn small danger" onClick={() => b?.deleteSelected()}>🗑 Delete</button>
         {sel.interactive && o && (
           <button className="btn small" onClick={() => b?.interact(o.id)}>
-            {o.def.interaction === 'door' || o.def.interaction === 'curtain' ? (o.state?.open ? 'Close' : 'Open') : o.def.interaction === 'label' ? 'Rename' : o.state?.on ? 'Turn off' : 'Turn on'}
+            {o.def.interaction === 'bed' ? 'Sleep' : o.def.interaction === 'sit' ? 'Sit' : o.def.interaction === 'door' || o.def.interaction === 'curtain' ? (o.state?.open ? 'Close' : 'Open') : o.def.interaction === 'label' ? 'Rename' : o.state?.on ? 'Turn off' : 'Turn on'}
           </button>
         )}
       </div>
@@ -416,7 +416,7 @@ function RegionPanel() {
       <span className="muted small-note">{region.blocks} blocks copied</span>
       <div className="sel-actions">
         <button className="btn small" onClick={() => b?.startPaste()}>📥 Paste (Ctrl+V)</button>
-        <button className="btn small" onClick={() => { useBuildStore.getState().set({ blueprintNaming: true }); Game.current?.openOverlay('buildDialog'); }}>📐 Save as blueprint</button>
+        <button className="btn small" onClick={() => { useBuildStore.getState().set({ blueprintNaming: true }); gameRegistry.current?.openOverlay('buildDialog'); }}>📐 Save as blueprint</button>
         <button className="btn small danger" onClick={() => b?.deleteRegion()}>🗑 Delete area</button>
       </div>
     </div>
@@ -484,7 +484,7 @@ function BuildClickToPlay() {
   const touch = useTouch();
   if (locked || cursorFree || overlay !== null || camera === 'build' || cursor || touch) return null;
   return (
-    <button className="click-to-play" onClick={() => Game.current?.input.requestLock()}>
+    <button className="click-to-play" onClick={() => gameRegistry.current?.input.requestLock()}>
       <span className="ctp-card">
         <b>Click to keep building</b>
         <small>Mouse to look · WASD to walk · B catalog · C build camera · Tab cursor mode</small>

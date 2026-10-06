@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { StationKind } from '../data/blocks';
 
-export type Screen = 'boot' | 'menu' | 'newWorld' | 'newBuild' | 'worlds' | 'settings' | 'howto' | 'credits' | 'pvp' | 'deathmatch' | 'loading' | 'playing' | 'error';
+export type Screen = 'boot' | 'menu' | 'newWorld' | 'newBuild' | 'worlds' | 'settings' | 'howto' | 'credits' | 'pvp' | 'joinFriends' | 'deathmatch' | 'loading' | 'playing' | 'error';
 export type Overlay = null | 'inventory' | 'container' | 'journal' | 'map' | 'pause' | 'death' | 'sleep' | 'settings' | 'lore' | 'controls' | 'catalog' | 'buildDialog';
 
 export interface Toast {

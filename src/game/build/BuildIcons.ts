@@ -6,18 +6,15 @@ import { blockObject } from '../rendering/BlockGeometry';
 import { blockId, SHAPE } from '../world/BlockRegistry';
 import { localBounds } from './BuildObjects';
 import { objectPreview, type ObjectMaterials } from './ObjectGeometry';
+import { catalogIconUrls as icons } from '../core/iconUrls';
+export { catalogIcon } from '../core/iconUrls';
 
 /**
  * Rendered catalog thumbnails (blocks in their default material, furniture in
  * its default colour). Rendered once per session into small data URLs; tools,
  * presets and tree stamps use emoji icons instead.
  */
-const icons = new Map<string, string>();
 let rendered = false;
-
-export function catalogIcon(id: string): string | undefined {
-  return icons.get(id);
-}
 
 export function iconsRendered(): boolean {
   return rendered;

@@ -75,6 +75,7 @@ export function WorldSelect() {
             </div>
           ))}
         </div>
+        <button className="btn" onClick={() => useGameStore.getState().setScreen('joinFriends')}>🤝 Join Friend’s World with Code</button>
         <div className="menu-buttons row">
           <button className="btn" onClick={() => useGameStore.getState().setScreen('newWorld')}>🌱 New World</button>
           <button className="btn build-home-btn" onClick={() => useGameStore.getState().setScreen('newBuild')}>🏡 Build Home</button>

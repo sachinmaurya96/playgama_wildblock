@@ -4,6 +4,8 @@ import { blockId, SHAPE } from '../world/BlockRegistry';
 import { blockObject } from '../rendering/BlockGeometry';
 import { drawIcon } from '../rendering/IconPainter';
 import { createAtlasTexture, createTerrainMaterials, createWorldUniforms, type TerrainMaterials, type WorldUniforms } from '../rendering/TerrainMaterials';
+import { itemIconUrls as icons } from './iconUrls';
+export { getIcon } from './iconUrls';
 
 /**
  * Owns generated GPU assets: the block texture array, shared terrain materials
@@ -11,14 +13,9 @@ import { createAtlasTexture, createTerrainMaterials, createWorldUniforms, type T
  * there are no image downloads that could fail. If a GLB/texture pipeline is
  * added later, load files here and fall back to the procedural versions.
  */
-const icons = new Map<string, string>();
 const iconCanvases = new Map<string, HTMLCanvasElement>();
 const spriteTextures = new Map<string, THREE.CanvasTexture>();
 let iconsReady = false;
-
-export function getIcon(item: string): string {
-  return icons.get(item) ?? '';
-}
 
 export function iconsGenerated(): boolean {
   return iconsReady;

@@ -94,4 +94,14 @@ export class BlockOutline {
   hide(): void {
     this.group.visible = false;
   }
+
+  dispose(): void {
+    this.lines.geometry.dispose();
+    this.lineMat.dispose();
+    for (const mesh of [this.crack, this.ghost]) {
+      mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose();
+    }
+    this.group.clear();
+  }
 }

@@ -205,7 +205,8 @@ export class EntityManager {
         }
       }
       const def = CREATURES[kind];
-      const n = def.groupSize[0] + Math.floor(Math.random() * (def.groupSize[1] - def.groupSize[0] + 1));
+      const n = Math.min(wantHostile ? hostileCap - hostile : friendlyCap - friendly,
+        def.groupSize[0] + Math.floor(Math.random() * (def.groupSize[1] - def.groupSize[0] + 1)));
       for (let i = 0; i < n; i++) {
         const ox = x + (i ? Math.round((Math.random() - 0.5) * 4) : 0), oz = z + (i ? Math.round((Math.random() - 0.5) * 4) : 0);
         const oy = habitat === 'cave' ? y : g.world.standableY(ox, oz) + 1;
@@ -527,7 +528,7 @@ export class EntityManager {
     const g = this.game;
     if (c.fade) return;
     c.health -= amount;
-    g.bus.emit('creatureHit', { id: c.id, kind: c.kind, amount, x: c.body.pos.x, y: c.body.pos.y + c.def.height, z: c.body.pos.z, crit, killed: c.def.hostile && c.health <= 0 });
+    g.bus.emit('creatureHit', { id: c.id, kind: c.kind, amount, x: c.body.pos.x, y: c.body.pos.y + c.def.height, z: c.body.pos.z, crit, killed: !c.tamed && c.health <= 0 });
     c.flash = 0.14;
     const dx = c.body.pos.x - from.x, dz = c.body.pos.z - from.z;
     const l = Math.hypot(dx, dz) || 1;
@@ -537,17 +538,15 @@ export class EntityManager {
     g.audio.creature(c.kind, 'hurt', c.body.pos);
     g.particles.emit('spark', c.body.pos.x, c.body.pos.y + c.def.height * 0.6, c.body.pos.z, 8, [1, 0.95, 0.7], { speed: 3, size: 0.07, life: 0.4 });
     if (!c.def.hostile) {
-      // friends are never killed: they run off and remember it
+      // Wildlife flees when hurt; the saved companion retains its protection.
       c.friendship = Math.max(-5, c.friendship - 2);
       c.followUntil = 0;
       useWorldStore.getState().addHarmony(-1.5);
       this.setState(c, 'flee');
       c.target = c.body.pos.clone().add(new THREE.Vector3(dx / l, 0, dz / l).multiplyScalar(12));
-      if (c.health <= 0 && !c.tamed) this.poof(c);
       if (c.tamed) c.health = Math.max(1, c.health);
-      return;
-    }
-    this.setState(c, 'chase');
+      if (c.health > 0) return;
+    } else this.setState(c, 'chase');
     if (c.health <= 0) {
       // "driven off": family-friendly poof, no gore
       for (const d of c.def.drops ?? []) {
@@ -556,8 +555,8 @@ export class EntityManager {
           g.drops.spawn(makeStack(d.item, n), c.body.pos.x, c.body.pos.y + 0.5, c.body.pos.z, 0.8);
         }
       }
-      g.bus.emit('creatureDefeated', { kind: c.kind });
-      if (g.clock.daylight < 0.3) this.nightKills++;
+      if (c.def.hostile) g.bus.emit('creatureDefeated', { kind: c.kind });
+      if (c.def.hostile && g.clock.daylight < 0.3) this.nightKills++;
       this.poof(c);
     }
   }
@@ -668,8 +667,12 @@ export class EntityManager {
     const p = g.player.position;
     const a = Math.random() * Math.PI * 2;
     const adventurer = g.difficulty === 'adventurer';
-    const size = Math.min(adventurer ? 7 : 5, 2 + Math.floor(nightIndex / 2) + (adventurer ? 2 : 0));
-    const kind: CreatureKind = Math.random() < 0.6 ? 'duskfang' : 'gloomstalker';
+    // Hunting waves share the normal hostile cap rather than adding unbounded mobs.
+    const cap = adventurer ? 18 : g.clock.day <= 1 ? 5 : 12;
+    const nearby = this.creatures.filter((c) => c.def.hostile && !c.fade && c.body.pos.distanceToSquared(p) < 72 * 72).length;
+    const size = Math.max(0, Math.min(cap - nearby, adventurer ? 7 : 5, 2 + Math.floor(nightIndex / 2) + (adventurer ? 2 : 0)));
+    const hunters: CreatureKind[] = ['duskfang', 'gloomstalker', 'zombie', 'skeleton'];
+    const kind = hunters[Math.floor(Math.random() * hunters.length)];
     let spawned = 0;
     for (let i = 0; i < size * 3 && spawned < size; i++) {
       const aa = a + (Math.random() - 0.5) * 0.6, d = 24 + Math.random() * 6;

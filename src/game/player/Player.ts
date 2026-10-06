@@ -123,6 +123,7 @@ export class Player {
   }
 
   teleport(x: number, y: number, z: number): void {
+    this.game.rest?.release();
     this.bodyYaw = this.yaw;
     this.body.pos.set(x, y, z);
     this.body.vel.set(0, 0, 0);
@@ -168,6 +169,7 @@ export class Player {
     if (this.hasBuff('sturdy')) def += 0.15;
     dmg *= 1 - Math.min(MAX_DEFENSE, def);
     this.vitality -= dmg;
+    this.game.rest?.stand();
     this.invulnerable = 0.45;
     this.shake = Math.min(1, this.shake + 0.6);
     if (from) {
@@ -329,7 +331,8 @@ export class Player {
       if (this.creative) this.teleport(0.5, this.game.world.standableY(0, 0) + 1.2, 0.5);
       else {
         this.hurt(10, 'void');
-        this.game.respawn('safe');
+        // A lethal hit may already have respawned us at home/camp.
+        if (b.pos.y < VOID_Y) this.game.respawn('safe');
       }
     }
 
@@ -436,7 +439,7 @@ export class Player {
     }
     animateExplorer(this.rig, {
       moving: Math.min(1, hs / SPRINT), time: this.game.time, action: 0, grounded: this.body.grounded, swimming: this.inWater && !this.body.grounded,
-      swing: this.swing > 0 ? 1 - this.swing : 0, swingKind: this.swingKind, look: -this.pitch,
+      swing: this.swing > 0 ? 1 - this.swing : 0, swingKind: this.swingKind, look: -this.pitch, sitting: this.seated,
     });
     if (this.crouching) this.rig.body.position.y -= 0.12;
     if (this.seated) this.rig.body.position.y -= 0.32;

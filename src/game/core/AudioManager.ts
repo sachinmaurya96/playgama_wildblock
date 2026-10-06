@@ -497,8 +497,12 @@ export class AudioManager {
         this.noiseBurst(out, t, 0.7, 'highpass', 2200 * p, 1, 0.25, this.noise, 3500);
         break;
       case 'gloomstalker':
+      case 'zombie':
         this.tone(out, t, 85 * p * hurt, 1.1, 'sawtooth', 0.07, 62 * p, 0.2);
         this.noiseBurst(out, t + 0.05, 0.8, 'lowpass', 400 * p, 2, 0.3, this.brown);
+        break;
+      case 'skeleton':
+        for (let i = 0; i < 3; i++) this.noiseBurst(out, t + i * 0.08, 0.06, 'bandpass', 1700 * p * hurt, 4, 0.2);
         break;
       case 'duskfang':
         if (what === 'idle') this.tone(out, t, 420 * p, 1.2, 'sine', 0.06, 640 * p, 0.3); // howl
