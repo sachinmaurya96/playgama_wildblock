@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Game } from '../../game/Game';
+import { gameRegistry } from '../../game/registry';
 import { useGameStore } from '../../stores/gameStore';
 import { ACTION_LABELS, keyLabel, useSettingsStore, type Action } from '../../stores/settingsStore';
 import { useWorldStore } from '../../stores/worldStore';
@@ -9,17 +9,19 @@ import { usePvpStore } from '../../stores/pvpStore';
 import { copyInvite } from '../HUD/PvpHud';
 import { dmNet } from '../../net/deathmatchNet';
 import { useDeathmatchStore } from '../../stores/deathmatchStore';
+import { QuickRespawnButton } from './QuickRespawnButton';
 
 export function PauseMenu() {
   const world = useGameStore((s) => s.world);
   const [controls, setControls] = useState(false);
   const [busy, setBusy] = useState(false);
   const day = useWorldStore((s) => s.dayCount);
-  const resume = () => Game.current?.closeOverlay();
+  const resume = () => gameRegistry.current?.closeOverlay();
 
   const quit = async () => {
     setBusy(true);
-    await Game.current?.saveNow('quit');
+    const saved = await gameRegistry.current?.saveNow('quit');
+    if (saved === false) { setBusy(false); return; }
     useGameStore.setState({ overlay: null });
     useGameStore.getState().setScreen('menu');
   };
@@ -40,10 +42,11 @@ export function PauseMenu() {
         <p className="muted">{world?.name} · Day {day}</p>
         <div className="menu-buttons">
           <button className="btn primary" onClick={resume} autoFocus>Resume</button>
+          <QuickRespawnButton />
           <button className="btn pvp-btn" onClick={() => useGameStore.getState().setOverlay('settings')}>🎮 Play this world with friends</button>
           <button className="btn" onClick={() => useGameStore.getState().setOverlay('settings')}>Settings</button>
           <button className="btn" onClick={() => setControls(true)}>Controls</button>
-          <button className="btn" onClick={() => Game.current?.openOverlay('journal')}>Journal</button>
+          <button className="btn" onClick={() => gameRegistry.current?.openOverlay('journal')}>Journal</button>
           <button className="btn" disabled={busy} onClick={quit}>{busy ? 'Saving…' : 'Save & Quit to Menu'}</button>
         </div>
       </div>
@@ -72,7 +75,8 @@ function PvpPause({ resume, onControls }: { resume: () => void; onControls: () =
         </div>
         <div className="menu-buttons">
           <button className="btn primary" onClick={resume} autoFocus>{together ? 'Back to the game' : 'Back to the fight'}</button>
-          <button className="btn" onClick={() => { const g = Game.current; if (g) { g.player.cameraMode = g.player.cameraMode === 'first' ? 'third' : 'first'; useSettingsStore.getState().update('gameplay', { cameraMode: g.player.cameraMode }); } resume(); }}>👁️ Switch camera (1st / 3rd person)</button>
+          <QuickRespawnButton />
+          <button className="btn" onClick={() => { const g = gameRegistry.current; if (g) { g.player.cameraMode = g.player.cameraMode === 'first' ? 'third' : 'first'; useSettingsStore.getState().update('gameplay', { cameraMode: g.player.cameraMode }); } resume(); }}>👁️ Switch camera (1st / 3rd person)</button>
           <button className="btn" onClick={() => void copyInvite(code)}>📋 Copy invite link</button>
           <button className="btn" onClick={() => { useGameStore.setState({ overlay: null }); usePvpStore.getState().set({ scoreboardOpen: true }); }}>🏆 Scoreboard</button>
           <button className="btn" onClick={() => useGameStore.getState().setOverlay('settings')}>Settings</button>
@@ -103,10 +107,11 @@ function BuildPause({ resume, quit, busy, onControls }: { resume: () => void; qu
         <p className="muted">Build Home project · autosaves as you build</p>
         <div className="menu-buttons">
           <button className="btn build-home-btn" onClick={resume} autoFocus>Keep building</button>
-          <button className="btn" onClick={() => { Game.current?.build?.togglePlayerView(); resume(); }}>👁️ Switch first / third person ({viewKey})</button>
-          <button className="btn" onClick={() => { useGameStore.getState().setOverlay(null); useBuildStore.getState().set({ walkthrough: false }); Game.current?.build?.setWalkthrough(true); Game.current?.input.requestLock(); }}>🚶 Walkthrough</button>
-          <button className="btn" onClick={() => { useGameStore.getState().setOverlay(null); Game.current?.build?.togglePhoto(); }}>📷 Photo mode</button>
-          {Game.current?.pvp ? (
+          <QuickRespawnButton />
+          <button className="btn" onClick={() => { gameRegistry.current?.build?.togglePlayerView(); resume(); }}>👁️ Switch first / third person ({viewKey})</button>
+          <button className="btn" onClick={() => { useGameStore.getState().setOverlay(null); useBuildStore.getState().set({ walkthrough: false }); gameRegistry.current?.build?.setWalkthrough(true); gameRegistry.current?.input.requestLock(); }}>🚶 Walkthrough</button>
+          <button className="btn" onClick={() => { useGameStore.getState().setOverlay(null); gameRegistry.current?.build?.togglePhoto(); }}>📷 Photo mode</button>
+          {gameRegistry.current?.pvp ? (
             <button className="btn" onClick={() => void copyInvite(usePvpStore.getState().code)}>📋 Invite friends · {usePvpStore.getState().code}</button>
           ) : (
             <button className="btn pvp-btn" onClick={() => useGameStore.getState().setOverlay('settings')}>🎮 Build this home with friends</button>

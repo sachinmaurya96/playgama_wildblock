@@ -17,6 +17,7 @@ interface ChunkRecord {
   needsMesh: boolean;
   group: THREE.Group | null;
   cancelGen?: () => void;
+  cancelMesh?: () => void;
   triangles: number;
 }
 
@@ -36,7 +37,7 @@ export class ChunkManager {
   private moveX = 0;
   private moveZ = 0;
   private refreshTimer = 0;
-  private uploads: { key: number; version: number; result: ChunkMeshResult }[] = [];
+  private uploads: { key: number; record: ChunkRecord; version: number; result: ChunkMeshResult }[] = [];
   private inflightMeshes = 0;
   private disposed = false;
   onChunkReady: ((chunk: Chunk) => void) | null = null;
@@ -167,9 +168,12 @@ export class ChunkManager {
       candidates.push(r);
     }
     candidates.sort((a, b) => this.priority(a.cx, a.cz) - this.priority(b.cx, b.cz));
+    const start = performance.now();
+    let n = 0;
     for (const r of candidates) {
-      if (this.inflightMeshes >= maxInflight) break;
+      if (this.inflightMeshes >= maxInflight || (n > 0 && (n >= 2 || performance.now() - start >= 4))) break;
       this.requestMesh(r);
+      n++;
     }
   }
 
@@ -208,11 +212,12 @@ export class ChunkManager {
       [vol.blocks.buffer, vol.meta.buffer, vol.tints.buffer],
       () => this.priority(r.cx, r.cz) - 2,
     );
+    r.cancelMesh = job.cancel;
     job.promise.then(
       (result) => {
         this.inflightMeshes--;
-        if (this.disposed) return;
-        this.uploads.push({ key: ckey(r.cx, r.cz), version, result });
+        if (this.disposed || this.records.get(ckey(r.cx, r.cz)) !== r) return;
+        this.uploads.push({ key: ckey(r.cx, r.cz), record: r, version, result });
       },
       () => {
         this.inflightMeshes--;
@@ -230,17 +235,21 @@ export class ChunkManager {
     this.uploads.sort((a, b) => this.priority(ckeyX(a.key), ckeyZ(a.key)) - this.priority(ckeyX(b.key), ckeyZ(b.key)));
     const start = performance.now();
     let n = 0;
-    while (this.uploads.length && (n < 2 || performance.now() - start < 4)) {
+    while (this.uploads.length && (n === 0 || (n < 2 && performance.now() - start < 4))) {
       const u = this.uploads.shift()!;
       n++;
       const r = this.records.get(u.key);
-      if (!r || r.gen !== 'ready') continue;
+      if (!r || r !== u.record || r.gen !== 'ready') continue;
       const chunk = this.world.chunkAt(r.cx, r.cz);
       if (!chunk) continue;
+      if (chunk.version !== u.version) {
+        r.mesh = r.group ? 'ready' : 'none';
+        r.needsMesh = true;
+        continue;
+      }
       this.installMesh(r, u.result);
       r.mesh = 'ready';
       r.meshVersion = u.version;
-      if (chunk.version !== u.version) r.needsMesh = true;
     }
   }
 
@@ -295,6 +304,7 @@ export class ChunkManager {
 
   private unload(k: number, r: ChunkRecord) {
     if (r.gen === 'pending') r.cancelGen?.();
+    r.cancelMesh?.();
     this.disposeGroup(r);
     this.records.delete(k);
     this.world.removeChunk(r.cx, r.cz);
@@ -347,9 +357,12 @@ export class ChunkManager {
     this.disposed = true;
     for (const [k, r] of this.records) {
       r.cancelGen?.();
+      r.cancelMesh?.();
       this.disposeGroup(r);
       this.records.delete(k);
     }
+    this.uploads = [];
+    this.world.onChunkChanged = null;
   }
 }
 

@@ -41,11 +41,11 @@ export class WorkerPool {
     try {
       for (let i = 0; i < this.size; i++) {
         const w = new Worker(new URL('./world.worker.ts', import.meta.url), { type: 'module' });
-        w.onmessage = (e: MessageEvent<WorkerResponse>) => this.onResult(i, e.data);
+        w.onmessage = (e: MessageEvent<WorkerResponse>) => this.onResult(w, e.data);
         w.onerror = (e) => {
           console.error('[WorkerPool] worker error', e.message);
           e.preventDefault();
-          this.failWorker(i);
+          this.failWorker(w);
         };
         this.workers.push(w);
         this.busy.push(null);
@@ -65,6 +65,7 @@ export class WorkerPool {
   }
 
   run<T>(req: JobInput, transfer: Transferable[], priority: () => number): { promise: Promise<T>; cancel: () => void } {
+    if (this.disposed) return { promise: Promise.reject(new Error('disposed')), cancel: () => {} };
     const id = this.nextId++;
     let job!: Job;
     const promise = new Promise<T>((resolve, reject) => {
@@ -92,7 +93,12 @@ export class WorkerPool {
       const job = this.takeBest();
       if (!job) return;
       this.busy[i] = job;
-      this.workers[i].postMessage(job.req, job.transfer);
+      try {
+        this.workers[i].postMessage(job.req, job.transfer);
+      } catch (e) {
+        this.busy[i] = null;
+        job.reject(e instanceof Error ? e : new Error(String(e)));
+      }
     }
   }
 
@@ -117,28 +123,39 @@ export class WorkerPool {
     return this.queue.splice(best, 1)[0];
   }
 
-  private onResult(worker: number, msg: WorkerResponse) {
-    const job = this.busy[worker];
-    this.busy[worker] = null;
-    if (job && job.id === msg.id) {
-      if (msg.ok) job.resolve(msg.result);
-      else job.reject(new Error(msg.error ?? 'worker failed'));
-    }
+  private onResult(worker: Worker, msg: WorkerResponse) {
+    const i = this.workers.indexOf(worker);
+    if (i < 0 || this.disposed) return;
+    const job = this.busy[i];
+    if (!job || job.id !== msg.id) return;
+    this.busy[i] = null;
+    if (job.cancelled) job.reject(new Error('cancelled'));
+    else if (msg.ok) job.resolve(msg.result);
+    else job.reject(new Error(msg.error ?? 'worker failed'));
     this.pump();
   }
 
-  private failWorker(i: number) {
+  private failWorker(worker: Worker) {
+    const i = this.workers.indexOf(worker);
+    if (i < 0 || this.disposed) return;
     const job = this.busy[i];
     this.busy[i] = null;
-    if (job) this.queue.push(job);
+    // Mesh inputs were transferred and are detached here. The caller must
+    // rebuild them, rather than posting detached buffers to another worker.
+    if (job) job.reject(new Error('worker failed'));
     // If every worker dies (e.g. module workers unsupported), switch to fallback.
     this.workers[i].terminate();
     this.workers.splice(i, 1);
     this.busy.splice(i, 1);
     if (this.workers.length === 0) this.enableFallback();
+    else this.pump();
   }
 
   private enableFallback() {
+    // A constructor can fail after some workers have already started.
+    for (const w of this.workers) w.terminate();
+    this.workers = [];
+    this.busy = [];
     this.fallback = true;
     this.scheduleFallback();
   }
@@ -178,6 +195,8 @@ export class WorkerPool {
     for (const j of this.busy) j?.reject(new Error('disposed'));
     this.queue = [];
     this.workers = [];
+    this.busy = [];
     if (this.fallbackTimer) clearTimeout(this.fallbackTimer);
+    this.fallbackTimer = null;
   }
 }

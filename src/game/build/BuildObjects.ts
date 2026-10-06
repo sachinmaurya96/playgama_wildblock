@@ -146,7 +146,7 @@ export class BuildObjects {
   /** Voxel light sources near the player (x, y, z, level) for object block light. */
   voxelLights: { x: number; y: number; z: number; l: number }[] = [];
   private lightTimer = 0;
-  private lightCursor = 0;
+  private lightIterator: MapIterator<PlacedObject> | null = null;
   labels = new THREE.Group();
   private labelSprites = new Map<number, THREE.Sprite>();
   onChanged: (() => void) | null = null;
@@ -343,7 +343,13 @@ export class BuildObjects {
   }
 
   private unindex(o: PlacedObject) {
-    for (const k of this.objCells.get(o.id) ?? []) this.grid.get(k)?.delete(o.id);
+    for (const k of this.objCells.get(o.id) ?? []) {
+      const cell = this.grid.get(k);
+      if (cell) {
+        cell.delete(o.id);
+        if (!cell.size) this.grid.delete(k);
+      }
+    }
     this.objCells.delete(o.id);
     this.boxCache.delete(o.id);
   }
@@ -490,7 +496,7 @@ export class BuildObjects {
 
   tick(dt: number, px: number, pz: number) {
     // eased open/close animation
-    for (const id of [...this.animating]) {
+    for (const id of this.animating) {
       const o = this.objects.get(id);
       if (!o) {
         this.animating.delete(id);
@@ -506,9 +512,15 @@ export class BuildObjects {
     this.lightTimer -= dt;
     if (this.lightTimer <= 0 && this.objects.size) {
       this.lightTimer = 0.05;
-      const all = [...this.objects.values()];
-      for (let k = 0; k < 24 && k < all.length; k++) {
-        const o = all[this.lightCursor++ % all.length];
+      for (let k = 0; k < 24 && k < this.objects.size; k++) {
+        this.lightIterator ??= this.objects.values();
+        let next = this.lightIterator.next();
+        if (next.done) {
+          this.lightIterator = this.objects.values();
+          next = this.lightIterator.next();
+        }
+        if (next.done) break;
+        const o = next.value;
         if (Math.abs(o.x - px) > 64 || Math.abs(o.z - pz) > 64) continue;
         const sky = o.sky, bl = o.bl;
         this.sampleLight(o);

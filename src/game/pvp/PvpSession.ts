@@ -21,7 +21,6 @@ import type { Game } from '../Game';
 export const PVP_DAMAGE = 1.35;
 const SEND_HZ = 12;
 const INTERP_DELAY = 110; // ms behind real time: smooth movement from 12 Hz updates
-const RESPAWN_SECONDS = 5;
 const MAX_PLAYERS = 8;
 /** Loot entries in one "loot" message: [id, item, count, durability (-1 = none), x, y, z, vx, vz]. */
 type LootEntry = [string, string, number, number, number, number, number, number, number];
@@ -38,6 +37,7 @@ interface Snap {
   by: number;
   m: number;
   g: boolean;
+  sitting: boolean;
 }
 
 /** Another player, drawn with the same explorer model as you (in their scarf colour, wearing their armor). */
@@ -50,6 +50,7 @@ class RemotePlayer {
   bodyYaw = 0;
   moving = 0;
   grounded = true;
+  sitting = false;
   hp = 100;
   dead = false;
   swing = 0;
@@ -116,6 +117,7 @@ class RemotePlayer {
       this.pitch += (c.pitch - this.pitch) * Math.min(1, dt * 14);
       this.moving = c.m;
       this.grounded = c.g;
+      this.sitting = c.sitting;
       while (b.length > 2 && b[1].t < now) b.shift();
     }
     this.swing = Math.max(0, this.swing - dt * 3.2);
@@ -125,8 +127,9 @@ class RemotePlayer {
     r.rotation.y = this.bodyYaw + Math.PI;
     animateExplorer(this.rig, {
       moving: this.moving, time: time + this.id.length, action: 0, grounded: this.grounded, swimming: false,
-      swing: this.swing > 0 ? 1 - this.swing : 0, swingKind: this.swingKind, look: -this.pitch,
+      swing: this.swing > 0 ? 1 - this.swing : 0, swingKind: this.swingKind, look: -this.pitch, sitting: this.sitting,
     });
+    if (this.sitting) this.rig.body.position.y -= 0.32;
   }
 
   dispose(parent: THREE.Object3D): void {
@@ -213,6 +216,7 @@ export class PvpSession {
   private lastHit: { by: string; at: number; how: string } | null = null;
   private swingCount = 0;
   private lastSwingSent = 0;
+  /** Shared worlds respawn immediately; retained for existing HUD/move checks. */
   respawnIn = 0;
   /** Quick respawn / teleport cooldown (seconds). */
   private moveCooldown = 0;
@@ -235,6 +239,35 @@ export class PvpSession {
   private relightsLeft = 0;
   /** Build Home with friends: this player's object changes waiting to be sent (latest move per object wins). */
   private outOps: ObjectOp[] = [];
+  private sleepId = 0;
+  private pendingSleep: { id: number; bed: NonNullable<Game['pendingBed']>; at: number } | null = null;
+
+  requestSleep(bed: NonNullable<Game['pendingBed']>): void {
+    const id = ++this.sleepId;
+    this.pendingSleep = { id, bed: { ...bed }, at: performance.now() };
+    this.net.send({ t: 'sleep', request: id, bed });
+  }
+
+  syncWorldClock(): void {
+    if (this.isHost) this.net.send({ t: 'clock', time: this.game.clock.time, left: null });
+  }
+
+  private acceptSleep(from: string, msg: NetMsg): void {
+    const bed = msg.bed as NonNullable<Game['pendingBed']> | undefined;
+    const remote = this.remotes.get(from);
+    const g = this.game, f = g.clock.dayFraction;
+    const valid = !!bed && [bed.x, bed.y, bed.z].every(Number.isFinite) &&
+      (bed.objectId === undefined || Number.isInteger(bed.objectId));
+    const accepted = valid && !!remote && this.players.has(from) && !remote.dead && this.phase === 'playing' &&
+      g.bedAvailable(bed, remote.pos) && (!!g.build || f <= 0.26 || f >= 0.72) &&
+      !g.entities.creatures.some((c) => c.def.hostile && !c.fade && c.body.pos.distanceToSquared(remote.pos) < 12 * 12);
+    if (accepted) {
+      g.clock.skipToMorning();
+      for (const c of g.entities.creatures) if (c.def.hostile && c.def.shy) g.entities.poof(c);
+      this.syncWorldClock();
+    }
+    this.net.send({ t: 'awake', request: msg.request, accepted, time: g.clock.time }, from);
+  }
 
   private offRoster: () => void;
 
@@ -252,7 +285,7 @@ export class PvpSession {
     this.group.name = 'pvp-players';
     game.scene.add(this.group);
     const w = net.welcome;
-    this.timeLeft = net.isHost ? (this.settings.minutes > 0 && this.settings.style !== 'together' ? this.settings.minutes * 60 : null) : w?.timeLeft ?? null;
+    this.timeLeft = null;
     if (net.isHost) this.players.set(net.selfId, { id: net.selfId, name: net.name, color: net.color, kills: 0, deaths: 0 });
     else if (w) for (const p of w.players) this.players.set(p.id, { ...p });
     usePvpStore.getState().set({
@@ -368,8 +401,10 @@ export class PvpSession {
     p.invulnerable = 3;
     this.giveKit();
     this.game.ensureSafePosition();
+    p.waitingForGround = !this.game.chunks.isReady(p.position.x, p.position.z);
     p.syncHud();
     this.lastHit = null;
+    this.respawnIn = 0;
     usePvpStore.getState().set({ respawnIn: 0, killedBy: null });
   }
 
@@ -485,10 +520,13 @@ export class PvpSession {
       }
     }
     target ??= this.randomSpawn();
+    if (this.game.boats.riding) this.game.boats.dismount();
     p.teleport(target.x, target.y, target.z);
     p.body.vel.set(0, 0, 0);
-    p.invulnerable = 2;
+    p.invulnerable = Math.max(p.invulnerable, 2);
     this.game.ensureSafePosition();
+    p.waitingForGround = !this.game.chunks.isReady(p.position.x, p.position.z);
+    this.pendingSafe = true;
     this.game.audio.play('chime');
     useGameStore.getState().toast(alive.length ? 'Rescued! You are back near the other players.' : 'Rescued! Back on solid ground.', 'info', '🆘');
     if (useGameStore.getState().overlay === null) this.game.input.requestLock();
@@ -562,18 +600,24 @@ export class PvpSession {
     return out;
   }
 
-  /** Local player died (any cause). Returns true: PvP handles it (no death screen, no item loss). */
+  /** Local death: publish loot/score, then respawn immediately unless the round has ended. */
   onLocalDeath(cause: string): boolean {
+    if (this.phase !== 'playing') return true;
     const recent = this.lastHit && performance.now() - this.lastHit.at < 12000 ? this.lastHit : null;
     const by = recent?.by ?? null;
     const how = recent?.how ?? cause;
-    this.respawnIn = RESPAWN_SECONDS;
+    this.respawnIn = 0;
     if (!this.together) this.dropLoot();
     this.game.player.syncHud();
-    usePvpStore.getState().set({ respawnIn: RESPAWN_SECONDS, killedBy: by ? this.players.get(by)?.name ?? 'someone' : null });
+    usePvpStore.getState().set({ respawnIn: 0, killedBy: by ? this.players.get(by)?.name ?? 'someone' : null });
     if (this.isHost) this.recordKill(this.selfId, by, how);
     else this.net.send({ t: 'died', id: this.selfId, by, how });
+    // Publish the death before the new spawn so peers keep loot and kill events in order.
     this.sendState(true);
+    if (this.phase === 'playing') {
+      this.respawn();
+      this.sendState(true);
+    }
     return true;
   }
 
@@ -585,6 +629,8 @@ export class PvpSession {
     if (host) {
       // the host is the referee: stamp the sender, relay, and keep score
       switch (msg.t) {
+        case 'sleep':
+          return this.acceptSleep(from, msg);
         case 'hello':
           return this.admit(from, msg);
         case 's':
@@ -634,6 +680,17 @@ export class PvpSession {
       return;
     }
     switch (msg.t) {
+      case 'awake': {
+        const pending = this.pendingSleep;
+        if (!pending || msg.request !== pending.id) return;
+        this.pendingSleep = null;
+        if (msg.accepted === true && typeof msg.time === 'number' && Number.isFinite(msg.time)) {
+          this.game.clock.time = msg.time;
+          this.game.pendingBed = pending.bed;
+          this.game.completeBedSleep(false);
+        } else useGameStore.getState().toast('Rest is unavailable: check the bed, time of day and nearby enemies.', 'info', '🛏️');
+        return;
+      }
       case 's':
       case 'a':
       case 'b':
@@ -661,7 +718,7 @@ export class PvpSession {
         return this.showKill(String(msg.victim), typeof msg.by === 'string' ? msg.by : null, String(msg.how ?? ''));
       case 'clock':
         if (typeof msg.time === 'number' && Math.abs(this.game.clock.time - msg.time) > 4) this.game.clock.time = msg.time;
-        this.timeLeft = typeof msg.left === 'number' ? msg.left : null;
+        this.timeLeft = null;
         return;
       case 'end':
         return this.endLocal(typeof msg.winner === 'string' ? msg.winner : null);
@@ -743,7 +800,7 @@ export class PvpSession {
       if (!Array.isArray(p) || p.length < 3 || !p.every(Number.isFinite)) return;
       const yaw = Number(msg.yw) || 0;
       const by = Number(msg.by);
-      r.push({ t: performance.now(), x: p[0], y: p[1], z: p[2], yaw, pitch: Number(msg.pt) || 0, by: Number.isFinite(by) ? by : yaw, m: Number(msg.m) || 0, g: !!msg.g });
+      r.push({ t: performance.now(), x: p[0], y: p[1], z: p[2], yaw, pitch: Number(msg.pt) || 0, by: Number.isFinite(by) ? by : yaw, m: Number(msg.m) || 0, g: !!msg.g, sitting: msg.sit === true });
       const hp = Number(msg.hp);
       if (Number.isFinite(hp) && hp !== r.hp) {
         if (hp < r.hp) this.game.fx.health(`p:${id}`, hp / 100, r.pos.x, r.pos.y + 1.95, r.pos.z);
@@ -789,13 +846,17 @@ export class PvpSession {
     let blocked = false;
     const off = this.game.bus.on('playerBlocked', () => (blocked = true));
     const before = p.invulnerable;
+    const previousHit = this.lastHit;
+    // hurt() can synchronously kill and respawn us; it must see this attacker's credit.
+    this.lastHit = { by: attacker, at: performance.now(), how: String(msg.how ?? 'melee') };
     const done = p.hurt(dmg, name, from);
     off();
     if (blocked) {
+      this.lastHit = previousHit;
       this.net.send({ t: 'blk', id: this.selfId, to: attacker }, this.isHost ? attacker : undefined);
       return;
     }
-    if (done > 0 || before <= 0) this.lastHit = { by: attacker, at: performance.now(), how: String(msg.how ?? 'melee') };
+    if (done <= 0 && before > 0) this.lastHit = previousHit;
     if (done > 0) useGameStore.setState({ hurtFlash: performance.now() });
   }
 
@@ -1054,7 +1115,7 @@ export class PvpSession {
       p.kills = 0;
       p.deaths = 0;
     }
-    this.timeLeft = this.settings.minutes > 0 && !this.together ? this.settings.minutes * 60 : null;
+    this.timeLeft = null;
     this.net.send({ t: 'restart' });
     this.broadcastRoster();
     this.restartLocal();
@@ -1128,12 +1189,16 @@ export class PvpSession {
     }
     this.net.send({
       t: 's', id: this.selfId, p: [r2(b.pos.x), r2(b.pos.y - (p.crouching ? 0.12 : 0)), r2(b.pos.z)], yw: r2(p.yaw), by: r2(p.bodyYaw), pt: r2(p.pitch), m: r2(Math.min(1, hs / 8)),
-      g: b.grounded, hp: Math.round((p.vitality / p.maxVitality) * 100), dead: p.dead, sw: this.swingCount, sk: p.swingKind, dr: this.dressKeys(), f: force ? 1 : 0,
+      g: b.grounded, sit: p.seated, hp: Math.round((p.vitality / p.maxVitality) * 100), dead: p.dead, sw: this.swingCount, sk: p.swingKind, dr: this.dressKeys(), f: force ? 1 : 0,
     });
   }
 
   update(dt: number): void {
     if (this.disposed) return;
+    if (this.pendingSleep && performance.now() - this.pendingSleep.at > 10_000) {
+      this.pendingSleep = null;
+      useGameStore.getState().toast('The host did not respond to sleep. Try again when connected.', 'warn', '🛏️');
+    }
     const g = this.game;
     // outgoing
     this.sendTimer -= dt;
@@ -1158,14 +1223,7 @@ export class PvpSession {
       // not heard from for a while (tab in the background, bad connection): hide until they're back
       if (now - r.lastHeard > 6000) r.rig.root.visible = false;
     }
-    // match clock
-    if (this.phase === 'playing' && this.timeLeft !== null) {
-      this.timeLeft = Math.max(0, this.timeLeft - dt);
-      if (this.isHost && this.timeLeft <= 0) {
-        const top = [...this.players.values()].sort((a, b) => b.kills - a.kills);
-        this.endMatch(top.length && (top.length === 1 || top[0].kills > top[1].kills) ? top[0].id : null);
-      }
-    }
+    // Keep synchronising world time, without imposing a room countdown.
     if (this.isHost) {
       this.clockTimer -= dt;
       if (this.clockTimer <= 0) {
@@ -1184,13 +1242,8 @@ export class PvpSession {
         this.objects.relightNear(this.center.x, this.center.z, 96);
       }
     }
-    // respawn
     this.updateMoves(dt);
     this.updateVoice(dt);
-    if (this.respawnIn > 0 && this.phase === 'playing') {
-      this.respawnIn -= dt;
-      if (this.respawnIn <= 0) this.respawn();
-    }
     this.uiTimer -= dt;
     if (this.uiTimer <= 0) {
       this.uiTimer = 0.25;

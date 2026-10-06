@@ -1,4 +1,4 @@
-import { Game } from '../../game/Game';
+import { gameRegistry } from '../../game/registry';
 import { GUNS, AMMO_NAMES, SWORD, type WeaponId } from '../../game/deathmatch/WeaponDefinitions';
 import type { Slot } from '../../game/deathmatch/WeaponSystem';
 import { useDeathmatchStore } from '../../stores/deathmatchStore';
@@ -30,7 +30,7 @@ export function WeaponHud() {
             className={`dm-wslot ${lo.sel === slot ? 'active' : ''} ${w ? '' : 'empty'}`}
             onPointerDown={(e) => {
               e.stopPropagation();
-              Game.current?.dm?.equip(slot);
+              gameRegistry.current?.dm?.equip(slot);
             }}
           >
             <kbd className="k">{slot + 1}</kbd>

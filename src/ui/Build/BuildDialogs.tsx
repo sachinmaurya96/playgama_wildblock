@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Game } from '../../game/Game';
+import { gameRegistry } from '../../game/registry';
 import { useBuildStore } from '../../stores/buildStore';
 
 /** Small Build Home dialogs: room label text, blueprint name, "are you sure?" for big deletions. */
@@ -10,7 +10,7 @@ export function BuildDialogs() {
   const set = useBuildStore((s) => s.set);
   const close = () => {
     set({ labelEdit: null, blueprintNaming: false, confirm: null });
-    Game.current?.closeOverlay();
+    gameRegistry.current?.closeOverlay();
   };
   if (labelEdit) return <LabelDialog id={labelEdit.id} initial={labelEdit.text} onDone={close} />;
   if (naming) return <BlueprintDialog onDone={close} />;
@@ -36,7 +36,7 @@ const ROOMS = ['Living Room', 'Kitchen', 'Dining', 'Bedroom', 'Main Bedroom', 'K
 function LabelDialog({ id, initial, onDone }: { id: number; initial: string; onDone: () => void }) {
   const [text, setText] = useState(initial);
   const save = (t: string) => {
-    Game.current?.build?.setLabelText(id, t);
+    gameRegistry.current?.build?.setLabelText(id, t);
     onDone();
   };
   return (
@@ -61,7 +61,7 @@ function BlueprintDialog({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState('My Blueprint');
   return (
     <div className="modal-backdrop">
-      <form className="panel confirm-panel" onSubmit={(e) => { e.preventDefault(); void Game.current?.build?.saveRegionAsBlueprint(name); onDone(); }}>
+      <form className="panel confirm-panel" onSubmit={(e) => { e.preventDefault(); void gameRegistry.current?.build?.saveRegionAsBlueprint(name); onDone(); }}>
         <button type="button" className="close-x" onClick={onDone} aria-label="Cancel">✕</button>
         <h2 className="panel-title">📐 Save as blueprint</h2>
         <p className="muted">Blueprints are shared by all your Build Home projects (Catalog → Presets → My Blueprints).</p>

@@ -1,4 +1,4 @@
-import { Game } from '../../game/Game';
+import { gameRegistry } from '../../game/registry';
 import { useInventoryStore } from '../../stores/inventoryStore';
 import { ItemSlot } from '../common/ItemSlot';
 import { BackpackGrid, useSlotHandlers } from './InventoryGrid';
@@ -6,7 +6,7 @@ import { BackpackGrid, useSlotHandlers } from './InventoryGrid';
 export function ContainerScreen() {
   const container = useInventoryStore((s) => s.container);
   const handlers = useSlotHandlers('container');
-  const close = () => Game.current?.closeOverlay();
+  const close = () => gameRegistry.current?.closeOverlay();
   if (!container) return null;
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>

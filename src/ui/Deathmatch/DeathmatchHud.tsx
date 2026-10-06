@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { touchEnabled } from '../../app/mobile';
-import { Game } from '../../game/Game';
+import { gameRegistry } from '../../game/registry';
 import { LARGE_MEDKIT, SMALL_MEDKIT } from '../../game/deathmatch/WeaponDefinitions';
 import { useDeathmatchStore } from '../../stores/deathmatchStore';
 import { useGameStore } from '../../stores/gameStore';
@@ -38,7 +38,7 @@ export function DeathmatchHud() {
         <>
           <TopBar />
           <PlayerRadar
-            blips={() => Game.current?.dm?.radarBlips() ?? null}
+            blips={() => gameRegistry.current?.dm?.radarBlips() ?? null}
             range={160}
             title="Radar — you are the white arrow, facing up. Green = teammates, red = opponents (the whole city fits)."
             empty="Players show here"
@@ -91,7 +91,7 @@ function OptionsChip() {
   const key = useSettingsStore((s) => keyLabel(s.controls.keys.options));
   if (touchEnabled(touch)) return null;
   return (
-    <button type="button" className={`dm-gear ${open ? 'on' : ''}`} title={`Options: camera, voice, controls, leave (${key})`} onClick={() => Game.current?.setDmOptions(!open)}>
+    <button type="button" className={`dm-gear ${open ? 'on' : ''}`} title={`Options: camera, voice, controls, leave (${key})`} onClick={() => gameRegistry.current?.setDmOptions(!open)}>
       ⚙️<kbd className="dm-k">{key}</kbd>
     </button>
   );
@@ -131,10 +131,10 @@ function Health() {
         <span>❤ {hp}</span>
       </div>
       <div className="dm-meds">
-        <button type="button" className="dm-med" onPointerDown={(e) => { e.stopPropagation(); Game.current?.dm?.heal('small'); }} disabled={!lo?.small}>
+        <button type="button" className="dm-med" onPointerDown={(e) => { e.stopPropagation(); gameRegistry.current?.dm?.heal('small'); }} disabled={!lo?.small}>
           🩹 {lo?.small ?? 0}<small>/{SMALL_MEDKIT.carry}</small><kbd className="dm-k">4</kbd>
         </button>
-        <button type="button" className="dm-med" onPointerDown={(e) => { e.stopPropagation(); Game.current?.dm?.heal('large'); }} disabled={!lo?.large}>
+        <button type="button" className="dm-med" onPointerDown={(e) => { e.stopPropagation(); gameRegistry.current?.dm?.heal('large'); }} disabled={!lo?.large}>
           ⛑️ {lo?.large ?? 0}<small>/{LARGE_MEDKIT.carry}</small><kbd className="dm-k">5</kbd>
         </button>
         {prot > 0 && <span className="dm-prot">🛡 Spawn protection</span>}
@@ -308,7 +308,7 @@ function ClickToFight() {
   }, []);
   if (locked || cursorFree || overlay !== null || options || touchEnabled(touch) || phase === 'ended') return null;
   return (
-    <button className="click-to-play" onClick={() => Game.current?.input.requestLock()}>
+    <button className="click-to-play" onClick={() => gameRegistry.current?.input.requestLock()}>
       <span className="ctp-card">
         <b>Click to get back in the fight</b>
         <small>WASD move · Mouse aim · Left click / F fire · Right aim · R reload · 1-3 weapons · 4/5 medkits · E pick up · T talk · Tab scores · O options · Esc menu</small>

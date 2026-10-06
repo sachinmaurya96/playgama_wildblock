@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { touchEnabled } from '../../app/mobile';
-import { Game } from '../../game/Game';
+import { gameRegistry } from '../../game/registry';
 import { useBuildStore } from '../../stores/buildStore';
 import { useInventoryStore } from '../../stores/inventoryStore';
 import { hasItem, itemDef } from '../../data/items';
@@ -54,7 +54,7 @@ export function TouchControls() {
    *  under the finger is swapped out mid-press (e.g. ⤒ turning into ⏬ when flight starts). */
   const heldBy = useRef(new Map<number, Held>());
 
-  const input = () => Game.current?.input;
+  const input = () => gameRegistry.current?.input;
   const releaseAll = () => {
     const inp = input();
     if (look.current) clearTimeout(look.current.timer);
@@ -74,7 +74,7 @@ export function TouchControls() {
       const key = heldBy.current.get(e.pointerId);
       if (!key) return;
       heldBy.current.delete(e.pointerId);
-      const inp = Game.current?.input;
+      const inp = gameRegistry.current?.input;
       if (inp && ![...heldBy.current.values()].includes(key)) inp.touch[key] = false;
     };
     window.addEventListener('pointerup', release, true);
@@ -86,7 +86,7 @@ export function TouchControls() {
   }, []);
 
   useEffect(() => {
-    const g = Game.current;
+    const g = gameRegistry.current;
     if (g) g.input.touch.active = enabled;
     document.documentElement.classList.toggle('touch-ui', enabled);
   }, [enabled]);
@@ -94,7 +94,7 @@ export function TouchControls() {
   // starting / ending flight swaps ⤒ for ⏫⏬: drop any up/down hold so you never keep rising or sinking
   const verticalMode = buildMode && (flying || buildCam || photo);
   useEffect(() => {
-    const inp = Game.current?.input;
+    const inp = gameRegistry.current?.input;
     for (const [id, k] of [...heldBy.current]) if (k === 'jump' || k === 'crouch') heldBy.current.delete(id);
     if (inp) inp.touch.jump = inp.touch.crouch = false;
   }, [verticalMode]);
@@ -154,7 +154,7 @@ export function TouchControls() {
         if (now - lastJump.current < 350) {
           lastJump.current = 0;
           inp.touch.jump = false;
-          Game.current?.build?.toggleFly(true);
+          gameRegistry.current?.build?.toggleFly(true);
           return;
         }
         lastJump.current = now;
@@ -289,12 +289,12 @@ export function TouchControls() {
         <div className="touch-buttons dm-touch">
           <button className="tbtn big t-main dm-fire" aria-label="Fire (slide to aim)" {...fireBtn()}>🔥</button>
           <button className="tbtn big t-jump" aria-label="Jump" {...hold('jump')}>⤒</button>
-          <button className={`tbtn t-a ${dmAim ? 'on' : ''}`} aria-label="Aim" {...tapBtn(() => { const s = Game.current?.dm; if (s) s.touchAim = !s.touchAim; })}>🎯</button>
-          <button className="tbtn t-b" aria-label="Reload" {...tapBtn(() => Game.current?.dm?.reload())}>R</button>
+          <button className={`tbtn t-a ${dmAim ? 'on' : ''}`} aria-label="Aim" {...tapBtn(() => { const s = gameRegistry.current?.dm; if (s) s.touchAim = !s.touchAim; })}>🎯</button>
+          <button className="tbtn t-b" aria-label="Reload" {...tapBtn(() => gameRegistry.current?.dm?.reload())}>R</button>
           <button className="tbtn t-c" aria-label="Crouch" {...hold('crouch')}>⤓</button>
-          <button className="tbtn t-d" aria-label="Switch weapon" {...tapBtn(() => Game.current?.dm?.cycleWeapon(1))}>⇄</button>
+          <button className="tbtn t-d" aria-label="Switch weapon" {...tapBtn(() => gameRegistry.current?.dm?.cycleWeapon(1))}>⇄</button>
           <button className="tbtn t-e" aria-label="Pick up" {...tapBtn(interact)}>✋</button>
-          <button className="tbtn t-f" aria-label="Medkit" {...tapBtn(() => Game.current?.dm?.heal())}>🩹</button>
+          <button className="tbtn t-f" aria-label="Medkit" {...tapBtn(() => gameRegistry.current?.dm?.heal())}>🩹</button>
         </div>
       ) : buildMode && photo ? (
         <div className="touch-buttons build vertical photo">
@@ -311,8 +311,8 @@ export function TouchControls() {
             <button key="jump" className="tbtn big t-jump" aria-label="Jump (double-tap to fly)" {...hold('jump')}>⤒</button>
           )}
           <button className="tbtn t-a" aria-label="Open / use" {...tapBtn(interact)}>✋</button>
-          {!walkthrough && <button className="tbtn t-b" aria-label="Rotate" {...tapBtn(() => Game.current?.build?.rotate())}>⟳</button>}
-          {!walkthrough && <button className="tbtn t-c" aria-label="Undo" {...tapBtn(() => Game.current?.build?.undo())}>↶</button>}
+          {!walkthrough && <button className="tbtn t-b" aria-label="Rotate" {...tapBtn(() => gameRegistry.current?.build?.rotate())}>⟳</button>}
+          {!walkthrough && <button className="tbtn t-c" aria-label="Undo" {...tapBtn(() => gameRegistry.current?.build?.undo())}>↶</button>}
         </div>
       ) : (
         <div className="touch-buttons survival">
@@ -325,21 +325,21 @@ export function TouchControls() {
       )}
       {dm && (
         <div className="touch-top">
-          <button className="tbtn small" aria-label="Scoreboard" {...tapBtn(() => Game.current?.dm?.toggleScoreboard())}>🏆</button>
-          <button className="tbtn small" aria-label="Options" {...tapBtn(() => Game.current?.setDmOptions(!useDeathmatchStore.getState().optionsOpen))}>⚙️</button>
-          <button className="tbtn small" aria-label="Pause" {...tapBtn(() => Game.current?.openOverlay('pause'))}>⏸</button>
+          <button className="tbtn small" aria-label="Scoreboard" {...tapBtn(() => gameRegistry.current?.dm?.toggleScoreboard())}>🏆</button>
+          <button className="tbtn small" aria-label="Options" {...tapBtn(() => gameRegistry.current?.setDmOptions(!useDeathmatchStore.getState().optionsOpen))}>⚙️</button>
+          <button className="tbtn small" aria-label="Pause" {...tapBtn(() => gameRegistry.current?.openOverlay('pause'))}>⏸</button>
         </div>
       )}
       {!buildMode && !dm && (
         <div className="touch-top">
-          <button className="tbtn small" aria-label="Backpack" {...tapBtn(() => Game.current?.openOverlay('inventory'))}>🎒</button>
+          <button className="tbtn small" aria-label="Backpack" {...tapBtn(() => gameRegistry.current?.openOverlay('inventory'))}>🎒</button>
           {pvp ? (
             <button className="tbtn small" aria-label="Scoreboard" {...tapBtn(() => usePvpStore.getState().set({ scoreboardOpen: !usePvpStore.getState().scoreboardOpen }))}>🏆</button>
           ) : (
-            <button className="tbtn small" aria-label="Journal" {...tapBtn(() => Game.current?.openOverlay('journal'))}>📔</button>
+            <button className="tbtn small" aria-label="Journal" {...tapBtn(() => gameRegistry.current?.openOverlay('journal'))}>📔</button>
           )}
-          <button className="tbtn small" aria-label="Map" {...tapBtn(() => Game.current?.openOverlay('map'))}>🗺️</button>
-          <button className="tbtn small" aria-label="Pause" {...tapBtn(() => Game.current?.openOverlay('pause'))}>⏸</button>
+          <button className="tbtn small" aria-label="Map" {...tapBtn(() => gameRegistry.current?.openOverlay('map'))}>🗺️</button>
+          <button className="tbtn small" aria-label="Pause" {...tapBtn(() => gameRegistry.current?.openOverlay('pause'))}>⏸</button>
         </div>
       )}
     </div>

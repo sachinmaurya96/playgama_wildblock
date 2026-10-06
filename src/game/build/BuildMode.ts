@@ -214,6 +214,12 @@ export class BuildMode implements EditTarget {
     for (const o of this.offs) o();
     this.clearGhosts();
     this.objects.dispose();
+    this.gmats.valid.dispose();
+    this.gmats.invalid.dispose();
+    for (const helper of [this.hover, this.region, this.measureLine]) {
+      helper.geometry.dispose();
+      (helper.material as THREE.Material).dispose();
+    }
     this.game.scene.remove(this.group);
     const u = this.game.assets.uniforms;
     for (const p of u.uPointPos.value) p.set(0, -1000, 0, 0);
@@ -450,7 +456,7 @@ export class BuildMode implements EditTarget {
         st.set({ dayFraction: this.game.clock.dayFraction });
       }
     }
-    const canAct = simulate && gs.overlay === null && !inp.cursorFree && !st.photo && !this.game.player.waitingForGround;
+    const canAct = simulate && gs.overlay === null && !inp.cursorFree && !st.photo && !this.game.player.waitingForGround && !this.game.rest.seated && !this.game.rest.consumed;
     if (!canAct) {
       this.target = null;
       this.hideTransient();
@@ -462,10 +468,10 @@ export class BuildMode implements EditTarget {
     this.target = this.pick();
     if (st.walkthrough) {
       this.hideTransient();
-      if (inp.keyPressed('KeyF') || inp.mouseRightPressed || inp.touch.interactPressed || this.primaryPressed()) this.interact();
+      if (inp.wasPressed('interact') || inp.mouseRightPressed || inp.touch.interactPressed || this.primaryPressed()) this.interact();
       return;
     }
-    if (inp.keyPressed('KeyF') || inp.touch.interactPressed) this.interact();
+    if (inp.wasPressed('interact') || inp.touch.interactPressed) this.interact();
     // Clicking / tapping a door, gate or curtain with the Place tool opens it (nobody wants to
     // stick a lamp onto a door leaf). Lights & taps still need F / ✋ so you can place next to them.
     const tobj = this.target?.obj?.obj;
@@ -2211,11 +2217,15 @@ export class BuildMode implements EditTarget {
   interact(id?: number): void {
     if (id === undefined && !this.target?.obj && this.harvest()) return;
     const o = id !== undefined ? this.objects.get(id) : this.target?.obj?.obj;
-    if (!o) return;
+    if (!o) { this.game.rest.interactNearby(); return; }
     const def = o.def;
     if (!def.interaction) return;
     const s = { ...(o.state ?? {}) };
     switch (def.interaction) {
+      case 'bed':
+      case 'sit':
+        this.game.rest.useObject(o);
+        return;
       case 'door':
       case 'curtain':
         s.open = !s.open;
@@ -2323,7 +2333,7 @@ export class BuildMode implements EditTarget {
       s = crop.ripe ? `${name} · ripe! ${touch ? 'Tap' : 'Click'} to harvest` : crop.bush ? `${name} · regrowing` : `${name} · growing ${crop.stage + 1}/${crop.stages}`;
     } else if (io?.def.interaction && io.def.interaction !== 'label' && (tool === 'place' || tool === 'select') && !st.pasting) {
       const open = io.def.interaction === 'door' || io.def.interaction === 'curtain';
-      const verb = open ? (io.state?.open ? 'Close' : 'Open') : io.state?.on ? 'Turn off' : 'Turn on';
+      const verb = io.def.interaction === 'bed' ? 'Sleep' : io.def.interaction === 'sit' ? 'Sit' : open ? (io.state?.open ? 'Close' : 'Open') : io.state?.on ? 'Turn off' : 'Turn on';
       s = `${io.def.name} · ${open ? (touch ? 'tap' : 'click') : touch ? '✋' : 'F / right-click'} to ${verb.toLowerCase()}`;
     } else if (st.pasting) s = `Placing ${st.pasteName ?? ''} · R rotate · click to confirm · right-click cancel`;
     else if (AREA_TOOLS.includes(tool)) {

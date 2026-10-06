@@ -4,7 +4,7 @@ import { ARMOR_SETS, itemDef, SET_BONUS_DEFENSE, type EquipSlot } from '../../da
 import { RECIPE_CATEGORIES, RECIPES, STATION_NAMES, type Recipe, type RecipeCategory } from '../../data/recipes';
 import { HOMESTEAD_LEVELS, SCARF_COLORS } from '../../data/progression';
 import { audio } from '../../game/core/audio';
-import { Game } from '../../game/Game';
+import { gameRegistry } from '../../game/registry';
 import { craftState, maxCraftsFitting, recipeSearchText, type CraftState } from '../../game/systems/CraftingSystem';
 import { countItem } from '../../game/systems/InventoryLogic';
 import { useGameStore } from '../../stores/gameStore';
@@ -23,7 +23,7 @@ type InvTab = 'pack' | 'craft' | 'me';
 
 export function InventoryScreen() {
   const station = useGameStore((s) => s.craftingStation);
-  const close = () => Game.current?.closeOverlay();
+  const close = () => gameRegistry.current?.closeOverlay();
   // Phones / small landscape screens: one section at a time with big tabs instead of a
   // three-column page where the backpack and crafting end up below the fold.
   const [compact] = useState(() => document.documentElement.classList.contains('touch-ui') && (window.innerHeight < 640 || window.innerWidth < 900));
@@ -216,7 +216,7 @@ function CraftingPanel({ initialStation }: { initialStation: StationKind | null 
   const slots = useInventoryStore((s) => s.slots);
   const points = useWorldStore((s) => s.homesteadPoints);
   const level = levelForPoints(points);
-  const stations = useMemo(() => Game.current?.nearbyStations() ?? new Set<StationKind>(), []);
+  const stations = useMemo(() => gameRegistry.current?.nearbyStations() ?? new Set<StationKind>(), []);
   const [tab, setTab] = useState<StationKind | 'pack' | 'all'>(initialStation ?? 'pack');
   const [cat, setCat] = useState<RecipeCategory | 'All'>('All');
   const [query, setQuery] = useState('');
@@ -226,11 +226,14 @@ function CraftingPanel({ initialStation }: { initialStation: StationKind | null 
   const allStations = Object.keys(STATION_NAMES) as StationKind[];
   const tabs: (StationKind | 'pack' | 'all')[] = ['pack', ...allStations, 'all'];
   const q = query.trim().toLowerCase();
-  const list = RECIPES.filter((r) => (tab === 'all' ? true : tab === 'pack' ? r.station === null : r.station === tab))
+  const list = useMemo(() => RECIPES.filter((r) => (tab === 'all' ? true : tab === 'pack' ? r.station === null : r.station === tab))
     .filter((r) => cat === 'All' || r.category === cat)
-    .filter((r) => !q || recipeSearchText(r).includes(q));
+    .filter((r) => !q || recipeSearchText(r).includes(q)), [tab, cat, q]);
   const rank: Record<CraftState, number> = { ok: 0, full: 1, ingredients: 2, station: 3, locked: 4 };
-  const stateOf = (r: Recipe) => craftState(r, slots, stations, level);
+  // outputFits simulates inventory changes. Evaluate each recipe once instead
+  // of repeating that work in every sorting comparison and rendered row.
+  const states = useMemo(() => new Map(list.map((r) => [r, craftState(r, slots, stations, level)])), [list, slots, stations, level]);
+  const stateOf = (r: Recipe) => states.get(r)!;
   const sorted = [...list].sort((a, b) => rank[stateOf(a)] - rank[stateOf(b)]);
   const sel = selected && list.includes(selected) ? selected : sorted[0] ?? null;
   const selState = sel ? stateOf(sel) : 'locked';
@@ -238,7 +241,7 @@ function CraftingPanel({ initialStation }: { initialStation: StationKind | null 
 
   const craft = (times: number) => {
     if (!sel) return;
-    Game.current?.craft(sel, times);
+    gameRegistry.current?.craft(sel, times);
   };
 
   const tabLabel = (t: StationKind | 'pack' | 'all') =>
@@ -287,29 +290,31 @@ function CraftingPanel({ initialStation }: { initialStation: StationKind | null 
         </div>
         {sel && (
           <div className="recipe-detail">
-            <div className="rd-head">
-              <ItemIcon item={sel.output.item} size={56} />
-              <div>
-                <div className="rd-name">{itemDef(sel.output.item).name}{sel.output.count > 1 ? ` ×${sel.output.count}` : ''}</div>
-                <div className="muted rd-desc">{itemDef(sel.output.item).description}</div>
-                <div className="rd-where muted">{sel.category} · {sel.station ? STATION_NAMES[sel.station] : 'Craft anywhere'}</div>
+            <div className="recipe-detail-content">
+              <div className="rd-head">
+                <ItemIcon item={sel.output.item} size={56} />
+                <div>
+                  <div className="rd-name">{itemDef(sel.output.item).name}{sel.output.count > 1 ? ` ×${sel.output.count}` : ''}</div>
+                  <div className="muted rd-desc">{itemDef(sel.output.item).description}</div>
+                  <div className="rd-where muted">{sel.category} · {sel.station ? STATION_NAMES[sel.station] : 'Craft anywhere'}</div>
+                </div>
               </div>
+              <div className="ingredients">
+                {sel.inputs.map((ing) => {
+                  const have = countItem(slots, ing.item);
+                  return (
+                    <div key={ing.item} className={`ing ${have >= ing.count ? 'have' : 'need'}`}>
+                      <ItemIcon item={ing.item} size={28} />
+                      <span>{itemDef(ing.item).name}</span>
+                      <b>{have}/{ing.count}</b>
+                    </div>
+                  );
+                })}
+              </div>
+              {selState === 'locked' && <p className="warn-text">Unlocks at Homestead level {sel.homestead}. Build, farm and befriend creatures to level up.</p>}
+              {selState === 'station' && sel.station && <p className="warn-text">Needs a {STATION_NAMES[sel.station]} nearby. Build one and stand next to it.</p>}
+              {selState === 'full' && <p className="warn-text">Inventory Full — free a slot to craft this.</p>}
             </div>
-            <div className="ingredients">
-              {sel.inputs.map((ing) => {
-                const have = countItem(slots, ing.item);
-                return (
-                  <div key={ing.item} className={`ing ${have >= ing.count ? 'have' : 'need'}`}>
-                    <ItemIcon item={ing.item} size={28} />
-                    <span>{itemDef(ing.item).name}</span>
-                    <b>{have}/{ing.count}</b>
-                  </div>
-                );
-              })}
-            </div>
-            {selState === 'locked' && <p className="warn-text">Unlocks at Homestead level {sel.homestead}. Build, farm and befriend creatures to level up.</p>}
-            {selState === 'station' && sel.station && <p className="warn-text">Needs a {STATION_NAMES[sel.station]} nearby. Build one and stand next to it.</p>}
-            {selState === 'full' && <p className="warn-text">Inventory Full — free a slot to craft this.</p>}
             <div className="craft-buttons">
               <button className="btn primary" disabled={selState !== 'ok'} onClick={() => craft(1)}>{selState === 'full' ? 'Inventory Full' : 'Craft'}</button>
               <button className="btn" disabled={selState !== 'ok' || fitting < 2} onClick={() => craft(Math.min(5, fitting))}>×{Math.max(2, Math.min(5, fitting))}</button>

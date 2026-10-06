@@ -1,68 +1,50 @@
+import { useState } from 'react';
 import { useGameStore } from '../../stores/gameStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { MenuBackground } from './MenuBackground';
-import { BUILD_CONTROLS } from '../../data/buildControls';
-
-const CARDS: { icon: string; title: string; text: string }[] = [
-  { icon: '🪓', title: 'Gather', text: 'Hold left click to chop, mine and dig. Chop the LOWEST log of a tree and the whole tree topples over. Break tall grass for fibre and seeds.' },
-  { icon: '🔨', title: 'Craft', text: 'Press E to open your backpack and Recipe Book. Start with Planks, Rope and a Scrap Axe. Workbenches, Forges and Cooking Fires unlock more recipes when you stand near them.' },
-  { icon: '🏡', title: 'Build a home', text: 'Right click places blocks (hold to keep placing, Ctrl to crouch safely at edges). Walls, a roof and a door make a shelter — the 🏡 icon lights up and you recover faster.' },
-  { icon: '🛏️', title: 'Rest', text: 'Craft a Cozy Cot and press F on it to set your home and sleep through the night. Furniture nearby adds Comfort for a better morning buff.' },
-  { icon: '🌱', title: 'Farm & cook', text: 'Till grass with a hoe, plant seeds and roots, and water the soil (or farm near a river). Cook meals at a Cooking Fire for bigger heals and buffs.' },
-  { icon: '🐾', title: 'Befriend creatures', text: 'Hold a creature’s favourite food and press F. Happy creatures follow you and leave gifts. Feed a Fenn three times and it may become your companion.' },
-  { icon: '🌙', title: 'Dangerous nights', text: 'At dusk you get a warning: after dark Gloomstalkers and Duskfang packs hunt you down, and around midnight a pack comes looking for you. Torch-lit places and homes with a roof are safe. At dawn they retreat — and you see how many you drove off.' },
-  { icon: '🛡️', title: 'Armory', text: 'Craft helmets, chestplates, leggings and boots (Thornhide, Gloomhide, Copper, Tempered, Crystal) in the 🛡️ Armor tab. A full set gives +8% protection. Shields block hits from the front; bows (right click / tap) shoot arrows.' },
-  { icon: '🕳️', title: 'Caves', text: 'New worlds have big cave systems: wide tunnels, huge caverns, more cave mouths and deep ravines. Bring torches — glowing ore and crystals hide down there, and so do cave creatures.' },
-  { icon: '⚔️', title: 'Deathmatch — Team Battle', text: 'Main menu → Deathmatch. Create a room (share the 6-letter code or invite link) or join one. Pick Red or Blue — double-click / double-tap an empty slot in the other team (or tap Switch). The host starts; after a 10-second countdown you spawn with a sword in City Clash. Grab guns, ammo and medkits around the city. Left click fire · right click aim (the M24 has a 4× scope) · R reload · 1-3 weapons · Q last weapon · 4/5 medkits · E pick up guns · Tab scoreboard. Most team eliminations when time runs out wins; top killer is MVP.' },
-  { icon: '🎮', title: 'PvP Mode', text: 'Main menu → PvP Mode. Choose ⚔️ Battle or 🤝 Build together, host a game and share the 6-letter code (or invite link); friends join from their own devices. Pick the Wild World or a flat arena. Everyone gets the same kit, takedowns score, and you respawn after 5 seconds. The top-left radar shows where everyone is; stuck in a cave or water? Tap 🆘 (or press R).' },
-  { icon: '🧭', title: 'Explore', text: 'Follow rivers to waterfalls, find stone circles, hollow trees and Whisper Steles. Your Discovery Journal (J) and Map (M) fill in as you go.' },
-  { icon: '⛵', title: 'Boats', text: 'Craft a Rowboat at a Workbench (5 planks + 2 rope). Use it on water, press F (✋ on touch) to climb in and steer with WASD or the joystick — it turns toward where you push. Jump steps out; two hits pick it back up.' },
-  { icon: '🗡️', title: 'Swords', text: 'Wooden, Stone, Copper, Tempered and Crystal swords sweep every foe in front of you. Jump and strike on the way down for a sparkling critical hit.' },
-  { icon: '🍃', title: 'Harmony & Homestead', text: 'Planting trees and feeding animals keeps nature in harmony and attracts rare wildlife. Building, farming and discoveries raise your Homestead level, unlocking new recipes.' },
-];
-
-const BUILD_CARDS: { icon: string; title: string; text: string }[] = [
-  { icon: '🏡', title: 'A creative project', text: 'Build Home gives you a flat 256 × 256 lot with scenery around it, unlimited materials and furniture, and no survival: no hunger, damage or creatures. Projects are saved separately from your survival worlds.' },
-  { icon: '📚', title: 'Build Catalog (B)', text: 'Search walls, floors, roofs, windows, kitchens, bathrooms, lighting, gardens and house templates. Pick a material or colour, favourite items and re-use recent ones with 1–9.' },
-  { icon: '🧱', title: 'Tools', text: 'Wall, Room, Floor, Roof, Stairs and Pool tools build big pieces from two clicks. Doors and windows cut their own openings. Paint, pick, move and rotate anything — and undo it all with Ctrl+Z.' },
-  { icon: '🕊️', title: 'Fly & doors', text: 'Double-tap Space or press 🕊️ Fly to float up to roofs and upper floors (Space up, Shift down). Click any door or gate to swing it open.' },
-  { icon: '🌾', title: 'Farming', text: 'The Farming category has crops, soil, hay, scarecrows, coops and a Little Farmstead template. The 🚜 Farm Plot tool tills, plants, irrigates and fences a whole field. "Growing 🌱" crops grow live — tap them when ripe to harvest.' },
-  { icon: '🎥', title: 'Look around', text: 'Press C for a free build camera (orbit, pan, zoom), F9 to walk through your home opening doors and switching lights, and F10 for photo mode with a time-of-day slider.' },
-];
+import { PLAYER_GUIDE, guideControls } from '../../data/playerGuide';
 
 export function HowToPlay() {
+  const [topic, setTopic] = useState('start');
+  const [query, setQuery] = useState('');
+  const keys = useSettingsStore((s) => s.controls.keys);
+  const search = query.trim().toLowerCase();
+  const sections = PLAYER_GUIDE.filter((s) => search || s.id === topic)
+    .map((s) => ({ ...s, cards: s.cards.filter((c) => !search || `${s.title} ${c.title} ${c.text}`.toLowerCase().includes(search)) }))
+    .filter((s) => s.cards.length);
+  const controlsTopic = ['build', 'deathmatch', 'pvp'].includes(topic) ? topic : 'survival';
+
   return (
     <div className="menu-screen">
       <MenuBackground />
       <div className="panel howto-panel">
         <button className="close-x" onClick={() => useGameStore.getState().setScreen('menu')} aria-label="Back">✕</button>
         <h2 className="panel-title">📖 How to Play</h2>
-        <div className="howto-grid scroll">
-          {CARDS.map((c) => (
-            <div key={c.title} className="howto-card">
-              <div className="howto-icon">{c.icon}</div>
-              <b>{c.title}</b>
-              <p>{c.text}</p>
+        <p className="muted howto-intro">Choose a topic, or search the whole guide. Controls include your saved bindings and fixed tool shortcuts.</p>
+        <input className="search" type="search" aria-label="Search the player guide" placeholder="Search farming, saves, touch, lag…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <nav className="tabs howto-topics" aria-label="Guide topics">
+          {PLAYER_GUIDE.map((s) => <button key={s.id} className={`tab ${topic === s.id && !search ? 'active' : ''}`} aria-pressed={topic === s.id && !search} onClick={() => { setTopic(s.id); setQuery(''); }}>{s.title}</button>)}
+        </nav>
+        <div className="howto-content" aria-live="polite">
+          {sections.map((s) => <section key={s.id} aria-labelledby={`guide-${s.id}`}>
+            <h3 className="sub-title" id={`guide-${s.id}`}>{s.title}</h3>
+            <div className="howto-grid">
+              {s.cards.map((c) => <article key={c.title} className="howto-card">
+                <div className="howto-icon" aria-hidden="true">{c.icon}</div>
+                <b>{c.title}</b>
+                <p>{c.text}</p>
+              </article>)}
             </div>
-          ))}
+          </section>)}
+          {sections.length === 0 && <p className="muted">No guide entries match. Try a shorter search or choose a topic.</p>}
         </div>
-        <h3 className="sub-title">🏡 Build Home</h3>
-        <div className="howto-grid">
-          {BUILD_CARDS.map((c) => (
-            <div key={c.title} className="howto-card">
-              <div className="howto-icon">{c.icon}</div>
-              <b>{c.title}</b>
-              <p>{c.text}</p>
-            </div>
-          ))}
-        </div>
-        <details className="howto-controls">
-          <summary>Build Home controls</summary>
+        {!search && <details key={controlsTopic} className="howto-controls">
+          <summary>{controlsTopic === 'build' ? 'Build Home' : controlsTopic === 'deathmatch' ? 'Deathmatch' : controlsTopic === 'pvp' ? 'Survival & PvP' : 'Survival'} keyboard & mouse controls</summary>
           <div className="controls-list">
-            {BUILD_CONTROLS.map(([k, v]) => <div key={k} className="control-row"><span className="kbd">{k}</span><span>{v}</span></div>)}
+            {guideControls(controlsTopic, keys).map(([key, action], i) => <div key={`${key}-${i}`} className="control-row"><span className="kbd">{key}</span><span>{action}</span></div>)}
           </div>
-        </details>
-        <p className="muted">Controls: WASD move · Space jump/swim · Shift sprint · Ctrl crouch · E backpack · F interact · V camera · J journal · M map · Q drop · Esc pause</p>
-        <p className="muted">📱 Phones & tablets: left stick moves (push to the rim to sprint) · drag the right side to look · tap the screen to use, place, open or attack · press & hold to break · tap hotbar slots to switch items · double-tap ⤒ in Build Home to fly.</p>
+          <p className="muted">Change supported bindings in Settings → Controls. Build tools and Deathmatch weapon shortcuts have fixed keys. For on-screen controls, choose Devices & smooth play.</p>
+        </details>}
       </div>
     </div>
   );

@@ -41,6 +41,7 @@ export class World {
   private batchDirty = new Set<number>();
   private lastKey = -1;
   private lastChunk: Chunk | undefined;
+  private standableColumns = new WeakMap<Chunk, { version: number; heights: Int16Array }>();
 
   /** Build Home plot type (null for survival worlds). */
   readonly plot: PlotType | null;
@@ -67,6 +68,7 @@ export class World {
   }
 
   addChunk(chunk: Chunk): void {
+    this.standableColumns.delete(chunk);
     const k = ckey(chunk.cx, chunk.cz);
     const mods = this.mods.get(k);
     if (mods) {
@@ -133,7 +135,7 @@ export class World {
    * Every collision box (world space, 6 numbers per box) overlapping the query
    * region. Includes one cell below for tall shapes (fences are 1.5 high).
    */
-  collectBoxes(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number, out: number[]): number[] {
+  collectBoxes(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number, out: number[], includeObjects = true): number[] {
     out.length = 0;
     const E = 1e-4;
     const x0 = Math.floor(minX), x1 = Math.floor(maxX - E);
@@ -157,7 +159,7 @@ export class World {
           if (!SOLID[id]) continue;
           for (const b of cellBoxes(id, c.meta[i])) out.push(x + b[0], y + b[1], z + b[2], x + b[3], y + b[4], z + b[5]);
         }
-    this.objectColliders?.(minX, minY - 1, minZ, maxX, maxY, maxZ, out);
+    if (includeObjects) this.objectColliders?.(minX, minY - 1, minZ, maxX, maxY, maxZ, out);
     return out;
   }
 
@@ -176,11 +178,27 @@ export class World {
 
   /** Highest block the player could stand on (skips leaves & plants). */
   standableY(x: number, z: number): number {
-    for (let y = WORLD_HEIGHT - 2; y > 0; y--) {
-      const id = this.get(x, y, z);
-      if (SOLID[id] && SHAPE[id] === 1 && !BLOCK_DEFS[id].key.includes('leav') && id !== B.PINE_NEEDLES && id !== B.PALM_FRONDS) return y;
-      if (id === B.WATER) return y;
+    const chunk = this.chunkAt(blockToChunk(x), blockToChunk(z));
+    if (!chunk) return 0;
+    let cached = this.standableColumns.get(chunk);
+    if (!cached) {
+      cached = { version: chunk.version, heights: new Int16Array(CHUNK_SIZE * CHUNK_SIZE).fill(-1) };
+      this.standableColumns.set(chunk, cached);
+    } else if (cached.version !== chunk.version) {
+      cached.version = chunk.version;
+      cached.heights.fill(-1);
     }
+    const column = blockToLocal(z) * CHUNK_SIZE + blockToLocal(x);
+    if (cached.heights[column] >= 0) return cached.heights[column];
+    // Read the column directly, avoiding a chunk lookup for every empty cell.
+    for (let y = WORLD_HEIGHT - 2; y > 0; y--) {
+      const id = chunk.blocks[y * CHUNK_SIZE * CHUNK_SIZE + column];
+      if ((SOLID[id] && SHAPE[id] === 1 && !BLOCK_DEFS[id].key.includes('leav') && id !== B.PINE_NEEDLES && id !== B.PALM_FRONDS) || id === B.WATER) {
+        cached.heights[column] = y;
+        return y;
+      }
+    }
+    cached.heights[column] = 0;
     return 0;
   }
 

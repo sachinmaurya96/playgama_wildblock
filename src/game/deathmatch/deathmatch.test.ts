@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CITY_G, LOOT_POINTS, spawnPoints } from './DeathmatchMap';
-import { DmRoom, PREP_SECONDS } from './DeathmatchRules';
+import { DmRoom, LOAD_TIMEOUT_SECONDS, PREP_SECONDS } from './DeathmatchRules';
 import { DmServer, type ServerIO } from './DmServer';
 import { blocksBullets, rayPlayers, spreadDirs, traceVoxels, type Vec } from './HitDetection';
 import { LootManager } from './LootManager';
@@ -216,10 +216,25 @@ describe('Deathmatch match flow', () => {
     h.join('a');
     h.server.receive('host', { t: 'start' });
     h.server.receive('host', { t: 'ready', r: h.r });
-    h.advance(31);
+    h.advance(LOAD_TIMEOUT_SECONDS + 1);
     expect(h.kicked).toContain('a');
     expect(h.server.phase).toBe('lobby');
     expect(h.last('host', 'cancel').reason).toMatch(/finished loading/);
+  });
+
+  it('keeps a slower device in the room past 30 seconds and starts when it is ready', () => {
+    const h = new Harness();
+    h.join('phone');
+    h.server.receive('host', { t: 'start' });
+    h.server.receive('host', { t: 'ready', r: h.r });
+    h.advance(45);
+    expect(h.kicked).toEqual([]);
+    expect(h.server.phase).toBe('loading');
+    h.server.receive('phone', { t: 'ready', r: h.r });
+    expect(h.server.phase).toBe('preparing');
+    h.advance(PREP_SECONDS + 0.1);
+    expect(h.server.phase).toBe('playing');
+    expect(h.server.room.players.has('phone')).toBe(true);
   });
 
   it('ends the match at the deadline and stops all scoring', () => {

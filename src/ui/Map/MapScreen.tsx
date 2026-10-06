@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Game } from '../../game/Game';
+import { gameRegistry } from '../../game/registry';
 import { useWorldStore } from '../../stores/worldStore';
 import type { MapTileRecord } from '../../persistence/types';
 
@@ -11,14 +11,14 @@ export function MapScreen() {
   const [offset, setOffset] = useState({ x: 0, z: 0 });
   const drag = useRef<{ x: number; y: number; ox: number; oz: number } | null>(null);
   const ws = useWorldStore();
-  const close = () => Game.current?.closeOverlay();
+  const close = () => gameRegistry.current?.closeOverlay();
 
   useEffect(() => {
-    void Game.current?.mapTiles().then(setTiles);
+    void gameRegistry.current?.mapTiles().then(setTiles);
   }, []);
 
   useEffect(() => {
-    const g = Game.current;
+    const g = gameRegistry.current;
     const cv = canvasRef.current;
     if (!g || !cv || !tiles) return;
     const W = cv.width, H = cv.height;
@@ -110,7 +110,7 @@ export function MapScreen() {
           }}
           onPointerUp={() => (drag.current = null)}
           onDoubleClick={(e) => {
-            const g = Game.current;
+            const g = gameRegistry.current;
             if (!g) return;
             const r = (e.target as HTMLCanvasElement).getBoundingClientRect();
             const sx = ((e.clientX - r.left) / r.width) * 760, sy = ((e.clientY - r.top) / r.height) * 480;

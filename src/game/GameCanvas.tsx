@@ -6,6 +6,7 @@ import { platform } from '../platform';
 import { useGameStore } from '../stores/gameStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { Game } from './Game';
+import { effectivePixelRatio } from './core/graphics';
 
 /**
  * React Three Fiber hosts the WebGL canvas, render loop and resize handling.
@@ -14,7 +15,7 @@ import { Game } from './Game';
  */
 export function GameCanvas({ launch }: { launch: LoadedWorld }) {
   const g = useSettingsStore((s) => s.graphics);
-  const dpr = Math.max(0.5, Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, g.maxPixelRatio) * g.resolutionScale);
+  const dpr = effectivePixelRatio(g, typeof window !== 'undefined' ? window.devicePixelRatio : 1);
   return (
     <Canvas
       flat

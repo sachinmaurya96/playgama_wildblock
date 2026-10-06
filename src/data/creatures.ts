@@ -1,8 +1,10 @@
 import type { BiomeId } from './biomes';
+import { CREATURE_MEAT } from './creatureFood';
 
 export type CreatureKind =
   | 'mossback' | 'pufftail' | 'twiglet' | 'mudsnout' | 'glowbug' | 'fenn'
-  | 'thorncrawler' | 'nightling' | 'stoneback' | 'cave_mite' | 'bog_snapper' | 'gloomstalker' | 'duskfang';
+  | 'thorncrawler' | 'nightling' | 'stoneback' | 'cave_mite' | 'bog_snapper' | 'gloomstalker' | 'duskfang'
+  | 'zombie' | 'skeleton';
 
 export interface CreatureDef {
   kind: CreatureKind;
@@ -69,6 +71,7 @@ export const CREATURES: Record<CreatureKind, CreatureDef> = {
     kind: 'glowbug', name: 'Glowbug', hostile: false, health: 4, speed: 1.2, radius: 0.25, height: 0.4,
     biomes: 'any', time: 'night', habitat: 'surface', weight: 3, groupSize: [2, 5], flies: true, glows: true,
     favoriteFood: ['glow_crystal'], gift: { item: 'glow_crystal', cooldown: 600 },
+    drops: [{ item: 'glow_crystal', chance: 1 }],
     description: 'A big, harmless lantern-insect that drifts over meadows at night.',
   },
   fenn: {
@@ -89,7 +92,7 @@ export const CREATURES: Record<CreatureKind, CreatureDef> = {
     kind: 'nightling', name: 'Nightling', hostile: true, health: 16, speed: 2.4, radius: 0.3, height: 0.8,
     biomes: 'any', time: 'night', habitat: 'surface', weight: 3, groupSize: [1, 3],
     damage: 7, attackRange: 1.2, aggroRange: 16, shy: true,
-    drops: [{ item: 'shadow_wisp', chance: 0.8 }],
+    drops: [{ item: 'shadow_wisp', chance: 1 }],
     description: 'A small shadow with bright eyes. It hates light and flees from torches.', subtitle: 'Nightling whispers',
   },
   stoneback: {
@@ -118,7 +121,7 @@ export const CREATURES: Record<CreatureKind, CreatureDef> = {
     kind: 'gloomstalker', name: 'Gloomstalker', hostile: true, health: 34, speed: 1.75, radius: 0.32, height: 1.75,
     biomes: 'any', time: 'night', habitat: 'surface', weight: 4, groupSize: [1, 2],
     damage: 9, attackRange: 1.4, aggroRange: 22, shy: true,
-    drops: [{ item: 'gloom_hide', chance: 0.85, count: [1, 2] }, { item: 'shadow_wisp', chance: 0.3 }],
+    drops: [{ item: 'gloom_hide', chance: 1, count: [1, 2] }, { item: 'shadow_wisp', chance: 0.3 }],
     description: 'A tall, hollow-eyed husk of moss and shadow that shambles out of the dark and follows your footsteps.', subtitle: 'Gloomstalker groans',
   },
   duskfang: {
@@ -128,7 +131,28 @@ export const CREATURES: Record<CreatureKind, CreatureDef> = {
     drops: [{ item: 'dusk_fang', chance: 0.8, count: [1, 2] }, { item: 'gloom_hide', chance: 0.25 }],
     description: 'Lean night hunters that run in packs. Fast and bold in the dark, they melt away at sunrise.', subtitle: 'Duskfang howls',
   },
+  zombie: {
+    kind: 'zombie', name: 'Zombie', hostile: true, health: 30, speed: 1.6, radius: 0.32, height: 1.75,
+    biomes: 'any', time: 'night', habitat: 'surface', weight: 4, groupSize: [1, 2],
+    damage: 10, attackRange: 1.4, aggroRange: 22, shy: true,
+    drops: [{ item: 'gloom_hide', chance: 1 }, { item: 'fiber', chance: 0.5, count: [1, 2] }],
+    description: 'A green, shambling night creature that follows exposed explorers. Shelter and torches help; it retreats at dawn.',
+    subtitle: 'Zombie groans',
+  },
+  skeleton: {
+    kind: 'skeleton', name: 'Skeleton', hostile: true, health: 18, speed: 2.25, radius: 0.3, height: 1.7,
+    biomes: 'any', time: 'night', habitat: 'surface', weight: 3, groupSize: [1, 2],
+    damage: 7, attackRange: 1.5, aggroRange: 24, shy: true,
+    drops: [{ item: 'bone', chance: 1, count: [1, 2] }, { item: 'arrow', chance: 0.4, count: [1, 3] }],
+    description: 'A quick, rattling skeleton that chases and strikes at close range after dark. Its bones make useful arrow tips.',
+    subtitle: 'Skeleton rattles',
+  },
 };
+
+for (const [kind] of CREATURE_MEAT) {
+  const def = CREATURES[kind];
+  def.drops = [{ item: `raw_${kind}_meat`, chance: 1, count: [1, kind === 'mossback' || kind === 'mudsnout' ? 3 : 2] }, ...(def.drops ?? [])];
+}
 
 export const FRIENDLY_KINDS = (Object.keys(CREATURES) as CreatureKind[]).filter((k) => !CREATURES[k].hostile);
 export const HOSTILE_KINDS = (Object.keys(CREATURES) as CreatureKind[]).filter((k) => CREATURES[k].hostile);

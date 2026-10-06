@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Game } from '../../game/Game';
+import { gameRegistry } from '../../game/registry';
 import { useGameStore } from '../../stores/gameStore';
 import { usePvpStore } from '../../stores/pvpStore';
+import { useBuildStore } from '../../stores/buildStore';
 import { keyLabel, useSettingsStore } from '../../stores/settingsStore';
 import { Gyro } from '../../game/core/Gyro';
 import { VoiceDock, VoicePanel } from '../Voice/VoiceControls';
@@ -21,7 +22,7 @@ export async function copyInvite(code: string): Promise<void> {
   const text = `Join my WildBlocks PvP match! Room code: ${code}\n${link}`;
   try {
     const nav = navigator as Navigator & { share?: (d: ShareData) => Promise<void> };
-    if (nav.share && Game.current?.input.touch.active) await nav.share({ title: 'WildBlocks PvP', text, url: link });
+    if (nav.share && gameRegistry.current?.input.touch.active) await nav.share({ title: 'WildBlocks PvP', text, url: link });
     else await navigator.clipboard.writeText(text);
     useGameStore.getState().toast('Invite copied — send it to your friends!', 'info', '📋');
   } catch {
@@ -37,15 +38,18 @@ export function CoopBar() {
   const players = usePvpStore((s) => s.players);
   const open = usePvpStore((s) => s.scoreboardOpen);
   const gear = usePvpStore((s) => s.gearOpen);
+  const hidden = useGameStore((s) => s.hudHidden);
+  const photo = useBuildStore((s) => s.photo);
   if (!active) return null;
   return (
     <>
+      {!hidden && !photo && <Radar />}
       <div className="coop-bar">
-        <button className="pvp-chip code" onClick={() => void copyInvite(code)} title="Copy invite link">
-          {online ? '🌐' : '💻'} <b>{code}</b> <small>· {players.length}/8</small>
+        <button className="pvp-chip code" onClick={() => void copyInvite(code)} title="Room code — friends enter this in Main menu → Join Friend’s World. Tap to copy the invite.">
+          {online ? '🌐' : '💻'} <small className="room-label">Room</small> <b>{code}</b> <small>· {players.length}/8</small>
         </button>
         <button className="pvp-chip" onClick={() => usePvpStore.getState().set({ scoreboardOpen: !open })} title="Who's building">🤝 {players.length} 👥</button>
-        <button className={`pvp-chip gear ${gear ? 'on' : ''}`} aria-label="Options" title="Options: voice, players, invite, settings, exit (Esc closes)" onClick={() => Game.current?.setPvpOptions(!gear)}>⚙️</button>
+        <button className={`pvp-chip gear ${gear ? 'on' : ''}`} aria-label="Options" title="Options: voice, players, invite, settings, exit (Esc closes)" onClick={() => gameRegistry.current?.setPvpOptions(!gear)}>⚙️</button>
       </div>
       {gear && <GearPanel kind="build" />}
       {/* Build Home uses T / H for its tools, so no key caps on the voice buttons here */}
@@ -68,7 +72,7 @@ export function PvpHud() {
   const together = usePvpStore((s) => s.settings.style === 'together');
   const gear = usePvpStore((s) => s.gearOpen);
   const optKey = useSettingsStore((s) => keyLabel(s.controls.keys.options));
-  const touch = !!Game.current?.input.touch.active;
+  const touch = !!gameRegistry.current?.input.touch.active;
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.code !== 'Tab' || useGameStore.getState().overlay !== null) return;
@@ -88,8 +92,8 @@ export function PvpHud() {
   return (
     <>
       <div className="pvp-top">
-        <button className="pvp-chip code" onClick={() => void copyInvite(code)} title="Copy invite link">
-          {online ? '🌐' : '💻'} <b>{code}</b> <small>· {players.length}/8</small>
+        <button className="pvp-chip code" onClick={() => void copyInvite(code)} title="Room code — friends enter this in Main menu → Join Friend’s World. Tap to copy the invite.">
+          {online ? '🌐' : '💻'} <small className="room-label">Room</small> <b>{code}</b> <small>· {players.length}/8</small>
         </button>
         {timeLeft !== null && <span className={`pvp-chip timer ${timeLeft <= 30 ? 'hurry' : ''}`}>⏱ {fmtTime(timeLeft)}</span>}
         {together ? (
@@ -99,7 +103,7 @@ export function PvpHud() {
             ⚔️ {me?.kills ?? 0}{killLimit > 0 ? <small>/{killLimit}</small> : null} <small>· 💀 {me?.deaths ?? 0}</small> 🏆
           </button>
         )}
-        <button className={`pvp-chip gear ${gear ? 'on' : ''}`} aria-label="Game options" title={`Options: camera, voice, controls, exit (${optKey})`} onClick={() => Game.current?.setPvpOptions(!gear)}>
+        <button className={`pvp-chip gear ${gear ? 'on' : ''}`} aria-label="Game options" title={`Options: camera, voice, controls, exit (${optKey})`} onClick={() => gameRegistry.current?.setPvpOptions(!gear)}>
           ⚙️{!touch && <small className="chip-key">{optKey}</small>}
         </button>
       </div>
@@ -163,7 +167,7 @@ export function Scoreboard() {
   const ended = phase === 'ended';
   const close = () => {
     usePvpStore.getState().set({ scoreboardOpen: false });
-    if (useGameStore.getState().overlay === null) Game.current?.input.requestLock();
+    if (useGameStore.getState().overlay === null) gameRegistry.current?.input.requestLock();
   };
   const leave = () => {
     useGameStore.setState({ overlay: null });
@@ -191,7 +195,7 @@ export function Scoreboard() {
         </table>
         <div className="sb-actions">
           {!ended && <button className="btn small" onClick={() => void copyInvite(code)}>📋 Invite friends</button>}
-          {ended && isHost && <button className="btn primary" onClick={() => Game.current?.pvp?.restartMatch()}>🔁 Play again</button>}
+          {ended && isHost && <button className="btn primary" onClick={() => gameRegistry.current?.pvp?.restartMatch()}>🔁 Play again</button>}
           {ended && !isHost && <span className="muted">Waiting for the host to start a new round…</span>}
           {ended && <button className="btn" onClick={leave}>Leave match</button>}
         </div>
@@ -205,7 +209,7 @@ function Radar() {
   return (
     <PlayerRadar
       blips={() => {
-        const pvp = Game.current?.pvp;
+        const pvp = gameRegistry.current?.pvp;
         if (!pvp) return null;
         const out: RadarBlip[] = [];
         for (const r of pvp.remotes.values()) if (!r.dead && r.lastHeard >= performance.now() - 6000) out.push({ name: r.name, color: r.color, x: r.pos.x, y: r.pos.y, z: r.pos.z });
@@ -227,20 +231,20 @@ function GearPanel({ kind = 'pvp' }: { kind?: 'pvp' | 'build' }) {
   const camera = useSettingsStore((s) => s.gameplay.cameraMode);
   const [confirmExit, setConfirmExit] = useState(false);
   const [help, setHelp] = useState(false);
-  const touch = !!Game.current?.input.touch.active;
+  const touch = !!gameRegistry.current?.input.touch.active;
   const setCamera = (mode: 'first' | 'third') => {
-    const g = Game.current;
+    const g = gameRegistry.current;
     if (g?.build) return g.build.setPlayerView(mode);
     if (g) g.player.cameraMode = mode;
     useSettingsStore.getState().update('gameplay', { cameraMode: mode });
   };
   const back = () => {
     if (touch) close();
-    else Game.current?.setPvpOptions(false);
+    else gameRegistry.current?.setPvpOptions(false);
   };
   const exit = async () => {
     if (!confirmExit) return setConfirmExit(true);
-    if (build) await Game.current?.saveNow('quit');
+    if (build && await gameRegistry.current?.saveNow('quit') === false) return;
     useGameStore.setState({ overlay: null });
     useGameStore.getState().setScreen('menu');
   };
@@ -298,7 +302,7 @@ function GearPanel({ kind = 'pvp' }: { kind?: 'pvp' | 'build' }) {
       )}
       <button className="btn small" onClick={() => { close(); usePvpStore.getState().set({ scoreboardOpen: true }); }}>🏆 Players & scores</button>
       <button className="btn small" onClick={() => void copyInvite(code)}>📋 Invite friends</button>
-      <button className="btn small" onClick={() => { close(); Game.current?.openOverlay('settings'); }}>⚙️ Settings (sound, graphics…)</button>
+      <button className="btn small" onClick={() => { close(); gameRegistry.current?.openOverlay('settings'); }}>⚙️ Settings (sound, graphics…)</button>
       <button className={`btn small ${confirmExit ? 'danger' : ''}`} onClick={() => void exit()}>{confirmExit ? 'Tap again to leave' : build ? '🚪 Save & exit' : '🚪 Exit game'}</button>
       <button className="btn small primary" onClick={back}>Resume</button>
     </div>
@@ -318,7 +322,7 @@ function useTick(ms = 500) {
 function QuickRespawn({ onDone }: { onDone: () => void }) {
   useTick();
   const [msg, setMsg] = useState<string | null>(null);
-  const pvp = Game.current?.pvp;
+  const pvp = gameRegistry.current?.pvp;
   const blocked = pvp?.moveBlocked() ?? null;
   return (
     <div className="quick-respawn">
@@ -326,7 +330,7 @@ function QuickRespawn({ onDone }: { onDone: () => void }) {
         className="btn small danger"
         disabled={!!blocked}
         onClick={() => {
-          const why = Game.current?.pvp?.quickRespawn() ?? null;
+          const why = gameRegistry.current?.pvp?.quickRespawn() ?? null;
           if (why) setMsg(why);
           else onDone();
         }}
@@ -355,9 +359,9 @@ export function LocationPanel({ onDone }: { onDone: () => void }) {
   const [text, setText] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const build = Game.current?.build;
-  const pvp = Game.current?.pvp;
-  const pos = Game.current?.player.position;
+  const build = gameRegistry.current?.build;
+  const pvp = gameRegistry.current?.pvp;
+  const pos = gameRegistry.current?.player.position;
   const spots = pvp?.playerSpots() ?? (build && pos ? [{ id: 'self', name: 'You', color: '#fff', x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z), dist: 0, me: true }] : []);
   const me = spots.find((p) => p.me);
   const result = (why: string | null) => {
@@ -382,7 +386,7 @@ export function LocationPanel({ onDone }: { onDone: () => void }) {
     if (busy) return;
     setBusy(true);
     try {
-      const g = Game.current;
+      const g = gameRegistry.current;
       // Build Home needs its own collision checks and camera updates, even with friends.
       const why = g?.build ? await g.build.navigation.teleportTo(x, z, y) : g?.pvp ? g.pvp.teleportTo(x, z, y) : 'Teleport is unavailable.';
       result(why);
@@ -409,7 +413,7 @@ export function LocationPanel({ onDone }: { onDone: () => void }) {
           <small className="muted">{p.x} {p.y} {p.z} · {p.dist}m</small>
           <button className="btn small" disabled={busy} onClick={() => {
             if (build) void teleport(p.x + (p.x <= 125 ? 2 : -2), p.z, p.y);
-            else result(Game.current?.pvp?.teleportToPlayer(p.id) ?? 'Teleport is unavailable.');
+            else result(gameRegistry.current?.pvp?.teleportToPlayer(p.id) ?? 'Teleport is unavailable.');
           }}>Go</button>
         </div>
       ))}

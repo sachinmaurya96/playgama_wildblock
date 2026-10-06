@@ -4,7 +4,7 @@ import { CREATURES, type CreatureKind } from '../../data/creatures';
 import { ITEM_DEFS, itemDef } from '../../data/items';
 import { ACHIEVEMENTS, LORE } from '../../data/progression';
 import { LANDMARK_NAMES, type LandmarkType } from '../../game/world/StructureGenerator';
-import { Game } from '../../game/Game';
+import { gameRegistry } from '../../game/registry';
 import { useWorldStore, type JournalSection } from '../../stores/worldStore';
 import { ItemIcon } from '../common/ItemSlot';
 
@@ -27,7 +27,7 @@ export function JournalScreen() {
   const [tab, setTab] = useState<(typeof SECTIONS)[number]['id']>('biomes');
   const journal = useWorldStore((s) => s.journal);
   const achievements = useWorldStore((s) => s.achievements);
-  const close = () => Game.current?.closeOverlay();
+  const close = () => gameRegistry.current?.closeOverlay();
   const total = (id: string) =>
     id === 'biomes' ? BIOMES.length : id === 'animals' ? Object.keys(CREATURES).length : id === 'plants' ? PLANT_KEYS.length : id === 'materials' ? MATERIAL_KEYS.length : id === 'lore' ? LORE.length : id === 'achievements' ? ACHIEVEMENTS.length : null;
   return (

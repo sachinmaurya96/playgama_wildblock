@@ -78,6 +78,13 @@ export class PlayerInteraction {
       g.outline.hide();
       return;
     }
+    if (g.rest.seated) {
+      this.breaking = null;
+      gs.setBreakProgress(0);
+      gs.setPrompt('Jump / Interact / Move  Stand up');
+      g.outline.hide();
+      return;
+    }
 
     // hotbar selection
     for (let i = 0; i < 9; i++) if (input.keyPressed(`Digit${i + 1}`)) inv.select(i);
@@ -279,6 +286,7 @@ export class PlayerInteraction {
     if (def.interact === 'container') return gs.setPrompt(`F  Open ${def.name}`);
     if (def.interact === 'station') return gs.setPrompt(`F  Use ${STATION_NAMES[def.station!] ?? def.name}`);
     if (def.interact === 'bed') return gs.setPrompt('F  Rest / Set Home');
+    if (def.interact === 'sit') return gs.setPrompt('F  Sit');
     if (def.interact === 'door') return gs.setPrompt(`F  ${t.meta & 4 ? 'Close' : 'Open'} Door`);
     if (def.interact === 'lore') return gs.setPrompt('F  Read the Whisper Stele');
     if (t.id === B.BERRY_BUSH && (t.meta >> 3) & 1) return gs.setPrompt('F  Pick Berries');
@@ -586,7 +594,7 @@ export class PlayerInteraction {
       return;
     }
     const t = this.target;
-    if (!t) return;
+    if (!t) { g.rest.interactNearby(); return; }
     const def = BLOCK_DEFS[t.id];
     const gs = useGameStore.getState();
     switch (def.interact) {
@@ -605,6 +613,9 @@ export class PlayerInteraction {
       case 'bed':
         g.pendingBed = { x: t.x, y: t.y, z: t.z };
         g.openOverlay('sleep');
+        return;
+      case 'sit':
+        g.rest.activate('sit');
         return;
       case 'door': {
         const open = toggleDoor(g.world, t.x, t.y, t.z);
@@ -633,7 +644,9 @@ export class PlayerInteraction {
       g.audio.play('break', { material: 'plant', pos: t.point });
       g.bus.emit('cropHarvested', { crop: def.key });
       gs.toast(`Harvested ${def.name} — replanted automatically.`, 'info', '🌾');
+      return;
     }
+    g.rest.interactNearby();
   }
 
   /** Loose an arrow along the crosshair. */
@@ -698,8 +711,8 @@ export class PlayerInteraction {
     this.attackCooldown = tool.kind === 'weapon' ? 0.45 : 0.55;
     this.swingAnim('attack');
     g.audio.play('swing');
-    if (!c.def.hostile) {
-      // gentle nudge only; hurting friends is discouraged
+    if (c.tamed) {
+      // Keep the existing saved companion protection.
       g.entities.damage(c, 1, g.player.position);
       return;
     }

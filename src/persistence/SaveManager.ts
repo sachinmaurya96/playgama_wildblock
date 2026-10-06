@@ -116,21 +116,27 @@ export async function loadMapTiles(worldId: string): Promise<MapTileRecord[]> {
  * chunks changed since the last save). Returns when the transaction commits.
  */
 export async function writeSave(meta: WorldMeta, state: WorldStateSave, world: World, maps: MapTileRecord[] = []): Promise<void> {
-  const store = await getStore();
+  // Take the edit snapshot before yielding. New edits made while storage is
+  // busy re-add their chunk keys and remain pending for the following save.
+  const dirty = [...world.dirtyMods];
   const chunks: ChunkModsRecord[] = [];
-  for (const k of world.dirtyMods) {
+  for (const k of dirty) {
     const cx = ckeyX(k), cz = ckeyZ(k);
     chunks.push({ key: `${meta.id}|${cx},${cz}`, worldId: meta.id, cx, cz, saveVersion: SAVE_VERSION, changes: world.serializeMods(k) });
   }
   world.dirtyMods.clear();
-  await store.putChunks(chunks);
-  await store.putMaps(maps);
-  // keep the previous good state as a one-deep backup before replacing it
-  const prev = await store.getState(meta.id);
-  if (prev && !recoveredWorlds.has(meta.id)) await store.putBackup(prev);
-  await store.putState({ ...state, id: meta.id, saveVersion: SAVE_VERSION });
-  await store.putWorld({ ...meta, saveVersion: SAVE_VERSION });
-  recoveredWorlds.delete(meta.id);
+  try {
+    const store = await getStore();
+    await store.commitSave(
+      { ...meta, saveVersion: SAVE_VERSION },
+      { ...state, id: meta.id, saveVersion: SAVE_VERSION },
+      chunks, maps, !recoveredWorlds.has(meta.id),
+    );
+    recoveredWorlds.delete(meta.id);
+  } catch (e) {
+    for (const k of dirty) world.dirtyMods.add(k);
+    throw e;
+  }
 }
 
 // ---------------------------------------------------------------- blueprints (shared by all Build Home projects)

@@ -31,6 +31,7 @@ export class NetSession {
   sourceObjects: unknown[] = [];
 
   constructor(readonly transport: Transport, readonly code: string, readonly online: boolean, readonly name: string, readonly color: string, public settings: PvpSettings) {
+    this.settings = { ...settings, minutes: 0 };
     this.isHost = transport.isHost;
     transport.onMessage = (from, msg) => {
       if (this.handler) this.handler(from, msg);
@@ -92,7 +93,7 @@ export const pvpNet = {
 /** Host a room: online (internet, via PeerJS) or local (two tabs on this device). */
 export async function hostRoom(opts: { name: string; color: string; online: boolean; settings: PvpSettings }): Promise<NetSession> {
   pvpNet.leave();
-  const settings = { ...DEFAULT_PVP_SETTINGS, ...opts.settings };
+  const settings = { ...DEFAULT_PVP_SETTINGS, ...opts.settings, minutes: 0 };
   if (settings.style === 'together') settings.building = true;
   if (!settings.seedText.trim()) settings.seedText = `arena-${Math.floor(Math.random() * 1e6)}`;
   let lastErr: unknown = null;

@@ -62,6 +62,11 @@
 .bh-saved { font-size: 0.78em; color: #b8e6a0; font-weight: 700; }
 .bh-saved.dirty { color: #ffd28a; }
 .bh-top-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; align-items: flex-start; }
+/* Shared projects reuse the player radar, leaving room for the header and tools. */
+.build-coop-hud .bh-top { left: calc(max(14px, var(--safe-l)) + 148px); }
+.build-coop-hud .bh-project { min-width: 0; }
+.build-coop-hud .bh-top-actions { flex: 1; min-width: 0; }
+.build-coop-hud .bh-tools { top: max(174px, calc(var(--safe-t) + 162px)); bottom: max(86px, calc(var(--safe-b) + 80px)); transform: none; max-height: none; }
 .env-wrap { position: relative; }
 .env-pop { position: absolute; right: 0; top: 40px; width: 300px; padding: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 5; }
 .env-controls { display: flex; flex-direction: column; gap: 8px; }
@@ -218,6 +223,12 @@
 .touch-ui .bh-top-actions { flex-wrap: nowrap; overflow-x: auto; max-width: 68vw; scrollbar-width: none; padding-bottom: 2px; }
 .touch-ui .bh-top-actions::-webkit-scrollbar { display: none; }
 .touch-ui .bh-top-actions .btn.small { min-height: 38px; min-width: 40px; padding: 0.25em 0.6em; white-space: nowrap; flex: 0 0 auto; }
+.touch-ui .build-coop-hud .pvp-radar canvas { width: 76px; height: 76px; }
+.touch-ui .build-coop-hud .pvp-radar small { max-width: 108px; }
+.touch-ui .build-coop-hud .bh-top { left: calc(max(8px, var(--safe-l)) + 108px); }
+.touch-ui .build-coop-hud .bh-top-actions { max-width: 100%; }
+.touch-ui .build-coop-hud .bh-tool-drawer { top: max(116px, calc(var(--safe-t) + 110px)); }
+.touch-ui .build-coop-hud .bh-tools.drawer-open { top: max(116px, calc(var(--safe-t) + 110px)); bottom: auto; max-height: calc(100vh - max(116px, calc(var(--safe-t) + 110px)) - 12px); }
 .touch-ui .bh-status { top: max(54px, calc(var(--safe-t) + 50px)); font-size: 0.82em; padding: 4px 12px; max-width: 56vw; }
 .touch-ui .bh-quick { bottom: max(6px, var(--safe-b)); padding: 4px; gap: 3px; }
 .touch-ui .bh-slot { width: 44px; height: 44px; }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { touchEnabled } from '../../app/mobile';
-import { Game } from '../../game/Game';
+import { gameRegistry } from '../../game/registry';
 import { dmInviteUrl, dmNet } from '../../net/deathmatchNet';
 import { useDeathmatchStore } from '../../stores/deathmatchStore';
 import { useGameStore } from '../../stores/gameStore';
@@ -23,9 +23,9 @@ export function DmOptions() {
   const [help, setHelp] = useState(false);
   const [confirmExit, setConfirmExit] = useState(false);
   const [copied, setCopied] = useState(false);
-  const close = () => Game.current?.setDmOptions(false);
+  const close = () => gameRegistry.current?.setDmOptions(false);
   const setCamera = (mode: 'first' | 'third') => {
-    const g = Game.current;
+    const g = gameRegistry.current;
     if (g) g.player.cameraMode = mode;
     useSettingsStore.getState().update('gameplay', { cameraMode: mode });
   };
@@ -86,7 +86,7 @@ export function DmOptions() {
       )}
       <button className="btn small" onClick={() => { close(); useDeathmatchStore.getState().set({ scoreboardOpen: true }); }}>🏆 Players & scores</button>
       <button className="btn small" onClick={() => void invite()}>{copied ? '✓ Invite link copied' : '📋 Invite friends'}</button>
-      <button className="btn small" onClick={() => { close(); Game.current?.openOverlay('settings'); }}>⚙️ Settings (sound, graphics…)</button>
+      <button className="btn small" onClick={() => { close(); gameRegistry.current?.openOverlay('settings'); }}>⚙️ Settings (sound, graphics…)</button>
       <button className={`btn small ${confirmExit ? 'danger' : ''}`} onClick={leave}>
         {confirmExit ? (isHost ? 'Tap again — ends the match for everyone' : 'Tap again to leave') : isHost ? '🚪 Close room' : '🚪 Leave match'}
       </button>

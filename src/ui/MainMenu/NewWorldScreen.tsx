@@ -9,7 +9,7 @@ const NAMES = ['Mossy Hollow', 'Brambleford', 'Amberfall Vale', 'Fernwhistle', '
 const DIFFICULTIES: { id: Difficulty; name: string; text: string }[] = [
   { id: 'peaceful', name: 'Peaceful', text: 'No hostile creatures. Nothing is lost if you faint.' },
   { id: 'explorer', name: 'Explorer', text: 'The intended experience: dangerous nights — creatures hunt you after dark. Some gathered items drop on fainting.' },
-  { id: 'adventurer', name: 'Adventurer', text: 'Night packs are bigger and fiercer. Everything drops when you faint.' },
+  { id: 'adventurer', name: 'Adventurer', text: 'Night packs are bigger and fiercer. Hotbar and backpack items drop when you faint; equipped gear stays.' },
 ];
 
 export function NewWorldScreen() {

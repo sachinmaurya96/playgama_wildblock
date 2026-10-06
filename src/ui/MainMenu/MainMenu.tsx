@@ -67,6 +67,7 @@ export function MainMenu() {
             🏡 Build Home <small>design your dream house</small>
           </button>
           <button className="btn pvp-btn" onClick={() => go('pvp')}>🎮 PvP Mode <small>battle or build with friends</small></button>
+          <button className="btn" onClick={() => go('joinFriends')}>🤝 Join Friend’s World <small>enter a room code</small></button>
           <button className="btn dm-btn" onClick={() => go('deathmatch')}>⚔️ Deathmatch — Team Battle <small>Join Red or Blue. Collect weapons. Win the battle.</small></button>
           <button className="btn" onClick={() => go('worlds')}>🗺️ Worlds</button>
           <button className="btn" onClick={() => go('settings')}>⚙️ Settings</button>

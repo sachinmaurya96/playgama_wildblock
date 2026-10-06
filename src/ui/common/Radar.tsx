@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Game } from '../../game/Game';
+import { gameRegistry } from '../../game/registry';
 
 /** One player on the radar (world position). */
 export interface RadarBlip {
@@ -26,7 +26,7 @@ export function PlayerRadar({ blips, range = RADAR_RANGE, title = 'Player radar 
     const loop = () => {
       raf = requestAnimationFrame(loop);
       const c = ref.current;
-      const g = Game.current;
+      const g = gameRegistry.current;
       const list = g ? blips() : null;
       if (!c || !g || !list) return;
       const dpr = Math.min(2, window.devicePixelRatio || 1);

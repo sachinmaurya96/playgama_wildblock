@@ -6,6 +6,8 @@ It also has **🏡 Build Home**, a separate creative mode: a flat 256 × 256 lot
 
 Everything you see and hear is **generated in code**: block textures, item icons, creature models, all sound effects and the adaptive music. There are no third-party art or audio assets (see `ASSET_LICENSES.md`).
 
+Complete documentation: [Player guide for every supported input/device](docs/PLAYER_GUIDE.md) · [Development guide](docs/DEVELOPER_GUIDE.md) · [Code audit, optimizations and device test matrix](docs/CODE_AUDIT.md). The in-game **How to Play** has the same player guidance with topic navigation, search and your current key bindings.
+
 ---
 
 ## Contents
@@ -43,11 +45,13 @@ Production:
 ```bash
 npm run typecheck    # tsc --noEmit
 npm run test         # vitest (unit + IndexedDB integration tests)
+npm run validate:data # content references and obtainability
+npm run docs:players # regenerate the manual from the in-game guide
 npm run build        # typecheck + vite build → dist/
 npm run preview      # serve dist/ locally
 ```
 
-`vite.config.ts` uses `base: './'`, so `dist/` works from any sub-directory (itch.io, Playgama, GitHub Pages…). No server-side routing and no backend are needed; after the first load the game runs fully offline.
+`vite.config.ts` uses `base: './'`, so `dist/` works from any sub-directory (itch.io, Playgama, GitHub Pages…). Single-player needs no backend and a loaded session can run offline. Reopening/refreshing may need a connection; no service worker guarantees offline loading. Online rooms and voice require networking.
 
 ## Technology
 
@@ -91,7 +95,7 @@ Dependencies were kept deliberately small. Two suggested packages were not neede
 
 Build Home has its own keys (B catalog, R rotate, X remove, P pick, Ctrl+Z / Ctrl+Y undo & redo, C build camera, F9 walkthrough, F10 photo mode…) — see [Build Home](#build-home) or *Pause → Controls* inside a project.
 
-All keys can be rebound in *Settings → Controls* (conflicting bindings swap).
+Actions listed in *Settings → Controls* can be rebound (conflicting bindings swap). Build-tool shortcuts and Deathmatch weapon controls have fixed keys.
 
 ### Phones & tablets
 
@@ -110,26 +114,30 @@ The game runs in **landscape**: on Android it goes fullscreen and locks the orie
 
 Phones default to a sharp-but-light graphics profile (native-ish pixel ratio up to 1.75×, render distance 4, light particles); Auto quality trims the pixel ratio first if the frame rate drops. Older saved settings with the previous blurry phone default are upgraded automatically.
 
+**Stuck in water, a cave or a build?** Open **Pause → Quick Respawn**, directly below Resume / Keep building. Survival returns you to Home or starting camp, Build Home returns to the lot entrance, and friend rooms use their existing nearby-player rescue with combat/cooldown checks. It keeps your current health, energy, items and progress. Terrain may need to load before movement resumes. Deathmatch does not offer this rescue button.
+
 ## What's in the game
 
 * **6 biomes** with smooth blending: Sunny Meadow, Deepwood, Pine Highlands, Sandy Coast, Amber Canyon and the rare Crystal Highlands.
 * **Terrain**: layered continental / elevation / erosion noise, terraced cliffs and plateaus, beaches, lakes, winding **rivers** in carved valleys, **waterfalls** where rivers step down between terraces (sheet shader + mist + splash particles + positional roar), 3-D noise **caves** and chambers with ores, underground pools, crystal clusters and glow mushrooms.
 * **Landmarks** (8 templates): Ancient Stone Circle, Overgrown Ruin, Forgotten Campsite, Giant Hollow Tree, Crystal Spire, Abandoned Cabin, Flower Valley, Sky Pillar — plus waterfalls. Ruins hold loot chests and **Whisper Steles** with the Wayfarers' journal fragments.
 * **Tree Collapse** (signature mechanic): chop the lowest log and the whole tree shakes, leans and topples as a single temporary mesh, then lands as collectible logs, sticks, saplings and fruit.
-* **109 blocks** including stairs, slabs, doors (2-tall, orientable), windows, fences, 25+ furniture / appliance / station models (bed, tables, chairs, shelves, cabinets, rugs, hearth, flower pots, Ice Box, Water Barrel, Wind Lamp, Grain Grinder, Crystal Lantern, Stone Oven…).
-* **133 items** and **97 recipes** in a recipe book (never hidden: missing ingredients, far stations and a full backpack are explained, and `npm run validate:data` proves every item is obtainable with no dependency deadlocks). Survival building also has modern architecture pieces — plaster walls, concrete, cut stone, oak floors, cladding, clay & shingle roofs, glass walls, stairs, beams, columns, garden walls, fences and glass railings with stations (Workbench, Stone Cutter, Forge, Cooking Fire, Kitchen Table/Grinder, Stone Oven, Carpentry Bench, Crystal Bench). Tool tiers: Scrap → Copper → Tempered → Crystal, with durability.
+* **112 blocks** including stairs, slabs, doors (2-tall, orientable), windows, fences, 25+ furniture / appliance / station models (bed, tables, chairs, shelves, cabinets, rugs, hearth, flower pots, Ice Box, Water Barrel, Wind Lamp, Grain Grinder, Crystal Lantern, Stone Oven…).
+* **193 survival items** and **144 recipes** in a recipe book (never hidden: missing ingredients, far stations and a full backpack are explained, and `npm run validate:data` proves every item is obtainable with no dependency deadlocks). Survival building also has modern architecture pieces — plaster walls, concrete, cut stone, oak floors, cladding, clay & shingle roofs, glass walls, stairs, beams, columns, garden walls, fences and glass railings with stations (Workbench, Stone Cutter, Forge, Cooking Fire, Kitchen Table/Grinder, Stone Oven, Carpentry Bench, Crystal Bench). Tool tiers: Scrap → Copper → Tempered → Crystal, with durability.
 * **Armory**: 5 armor sets (Thornhide, Gloomhide, Copper, Tempered, Crystal) × helmet / chestplate / leggings / boots — damage reduction capped at 75%, +8% for a full set, Gloomhide also makes you a little faster. 4 shields (off-hand: chance to block hits from the front), Hunter Bow & Crystal Bow with arrows (gravity-arced projectiles, can be picked up again), all in the 🛡️ Armor / Weapons recipe tabs. Armor shows on your character (third person and in PvP).
-* **Dangerous nights**: a dusk warning, far more hostiles after dark (Explorer: 5 on the first night, 12 later; Adventurer 18), Gloomstalkers and Duskfang packs that track you from ~44 blocks away, a hunting pack around midnight, and a dawn retreat with a "creatures driven off" tally. Torch-lit spots and roofed homes are safe.
+* **Dangerous nights**: a dusk warning, far more hostiles after dark (Explorer: 5 on the first night, 12 later; Adventurer 18), Zombies, Skeletons, Gloomstalkers and Duskfang packs that track you from ~44 blocks away, a hunting pack around midnight, and a dawn retreat with a "creatures driven off" tally. Torch-lit spots and roofed homes discourage hostile spawning; existing enemies can still threaten you.
 * **Combat feedback**: floating damage numbers (gold for critical hits), health bars over hurt enemies, "Blocked!" pops, "Defeated!" bursts and kill milestones.
 * **Caves v2** (new worlds): wider tunnels, a second long tunnel network, bigger caverns, more cave mouths and deep ravines. Existing worlds keep their original terrain (`WorldMeta.caves`).
 * **Swords**: Wooden, Stone, Copper, Tempered and Crystal swords. Every swing sweeps all hostiles in an arc in front of you (60% damage to the extras); strike while falling for a sparkling ×1.5 critical hit.
 * **Rowboats**: craft at a Workbench (5 planks + 2 rope), set one down on a river or lake, F / ✋ to climb in. The boat steers toward where you push (relative to the camera — the same on keyboard and joystick), glides with gentle drag, bumps off banks, crawls on land and can be picked up again with two hits. Boats are saved with the world.
 * **Farming**: hoe → till → plant (Sunwheat, Emberroot, Puffgourd, Brookmint, Skycorn, Blushberry) → water (watering can, rain or nearby rivers) → grows by game-time timestamps (even while unloaded) → harvest & auto-replant. Berry bushes regrow.
 * **Cooking & buffs**: soups, teas, pies, bread, stews — Swift, Sturdy, Well Fed, Hearty, Glowsight. Hunger is gentle: an **Energy** meter that never starves you.
-* **Creatures**: friendly Mossback, Pufftail, Twiglet, Mudsnout, Glowbug and **Fenn** (a fox-like companion you can befriend, who warns about danger and sniffs out ore); hostile Thorncrawler, Nightling (fears light), Stoneback, Cave Mite, Bog Snapper. State-machine AI, tiered update rates, family-friendly "poof" when driven off.
+* **Creatures**: friendly Mossback, Pufftail, Twiglet, Mudsnout, Glowbug and **Fenn** (a fox-like companion you can befriend, who warns about danger and sniffs out ore); hostile Thorncrawler, Nightling (fears light), Stoneback, Cave Mite, Bog Snapper, Gloomstalker, Duskfang, Zombie and Skeleton. State-machine AI, tiered update rates, family-friendly "poof" when driven off.
+* **Creature loot**: defeated untamed wildlife drops species meat; cook it at a Cooking Fire for better recovery. Other creatures have guaranteed material loot. Skeleton bones can be used for arrows. Feeding, gifts and the protected tamed Fenn remain available.
+* **Beds and seats**: Sleep / Set home and Sit buttons appear within about three blocks of reachable furniture on desktop, phones and tablets. Survival sleep requires night and no nearby hostiles; Build Home beds can advance locked daytime too. Move, jump, Interact or tap Stand up to leave a seat. Shared sleep is checked by the host; friends see the seated pose. Chair saves resume at an exit position.
 * **Day/night** (24 min default), stylised sun/moon/stars, drifting voxel clouds, **weather** (clear, cloudy, rain, storm with accessibility-safe lightning, mist).
 * **Homestead Level** (building, farming, friendships, discoveries unlock recipes and cosmetics), **Home Comfort** (furniture near your bed improves the morning buff), **Nature Harmony** (plant trees, feed animals → rare butterflies and more wildlife; over-harvesting quietly thins it).
-* **Discovery Journal**, **world map** of explored areas, **compass** with home / quest / waypoint / lost-satchel markers, onboarding **quests**, **achievements**, shelter detection 🏡, sleep & set home, death/respawn with gentle item loss by difficulty (Peaceful / Explorer / Adventurer).
+* **Discovery Journal**, **world map** of explored areas, **compass** with home / quest / waypoint / lost-satchel markers, onboarding **quests**, **achievements**, shelter detection 🏡, sleep & set home, immediate automatic respawn at Home (or starting camp) with existing item-loss rules by difficulty (Peaceful / Explorer / Adventurer), 75% Vitality, at least 60 Energy and 3 s protection.
 
 ## Build Home
 
@@ -173,7 +181,11 @@ Choose **🏡 Build Home** on the main menu (the orange button under *New World*
 
 ## PvP Mode (free peer-to-peer multiplayer)
 
-Main menu → **🎮 PvP Mode**. One player hosts (picks **⚔️ Battle** or **🤝 Build together** — co-op with no player damage —, a kit — Hunter / Knight / Champion —, match length, takedown goal, map seed, building on/off, night creatures on/off) and gets a **6-character room code** plus an invite link (`?pvp=CODE`). Friends choose **Join with code**. Up to 8 players on a real WildBlocks map generated from the room's seed.
+Main menu → **🎮 PvP Mode**. One player hosts (picks **⚔️ Battle** or **🤝 Build together** — co-op with no player damage —, a kit — Hunter / Knight / Champion —, takedown goal, map seed, building on/off, night creatures on/off) and gets a **6-character room code** plus an invite link (`?pvp=CODE`). Friends choose **Main menu → Join Friend’s World**, enter their name and code, and press **Join game**; **PvP Mode → Join with code** also works. Up to 8 players on a real WildBlocks map generated from the room's seed. Shared worlds, Build together and Battle have no time limit; only Deathmatch is timed. Battle can still end at its selected takedown goal, or use No takedown limit for an ongoing room.
+
+To join a friend's existing survival map or Build Home project, the host first opens **Settings → Play with Friends → Open to friends**, then shares the code shown in their in-game room bar. The same **Join Friend’s World** button opens the correct shared map automatically, including Build Home's full tools. **Worlds → Join Friend’s World with Code** is another entry point. Use **Online** on both devices and keep the host connected. No invite link is required. Deathmatch has its own separate join screen and room codes.
+
+Shared Build Home projects also show the player radar in the top-left: friends appear as coloured dots, distant friends as arrows with distance, and the label shows the nearest friend. It uses existing multiplayer position updates, works for hosts and guests, and hides in Photo mode or when the HUD is hidden. Phone/tablet sizing leaves the header and tool drawer accessible.
 
 * **No server to pay for.** Players connect browser-to-browser over **WebRTC data channels** using [PeerJS](https://peerjs.com). The free PeerJS cloud (`0.peerjs.com`) is only used for the initial handshake; all game traffic then goes directly between players. STUN servers (Google / Cloudflare, free) find the direct route.
 * **Topology**: the host is the hub and referee — clients send to the host, the host relays and keeps the scoreboard, timer and map-change log (late joiners receive all block edits so far). Code: `src/net/transport.ts` (PeerJS + a BroadcastChannel transport for two tabs on one device), `src/net/pvpNet.ts` (room create/join), `src/game/pvp/PvpSession.ts` (in-game sync), `src/stores/pvpStore.ts`, `src/ui/MainMenu/PvpScreen.tsx`, `src/ui/HUD/PvpHud.tsx`.
@@ -182,7 +194,7 @@ Main menu → **🎮 PvP Mode**. One player hosts (picks **⚔️ Battle** or **
 * **⚙️ Options**: in-match button for 1st / 3rd person camera, controls help, scoreboard, invite, settings and exit. Everyone moves at the same speed in PvP (armor/buffs don't change it).
 * **Voice chat** (`src/net/voice.ts`): opt-in from ⚙️. A WebRTC audio mesh (each pair of players connects directly, ~30 kbps per voice), signalled over the game connection (`v` / `vs` messages relayed by the host). Push-to-talk (T / 🎤) or open mic, proximity voice via Web Audio `PannerNode`, per-player mute. Needs https (or localhost) for the microphone.
 * **Radar & rescue**: a top-left radar shows every player (rim arrows + distance when far, ▲/▼ for height). A 🆘 button (or R) appears only when you're stuck in a cave / ravine / water and puts you next to another player (30 s cooldown, not right after being hit).
-* **Rules**: same kit for everyone, refilled on every respawn (5 s, random spawn around the arena, 3 s spawn protection); PvP hits do ×1.35 damage; no items are lost and nothing is saved.
+* **Rules**: immediate automatic respawn while the round is active, with a random safe spawn, full health/energy, the chosen kit refilled and 3 s spawn protection. Battle gear drops where you fell; Build together does not drop gear. A round-ending death stays on results. Movement waits for terrain readiness. PvP hits do ×1.35 damage. These rooms are temporary, except the host's shared Build Home project. Deathmatch keeps its separate 5 s respawn wait.
 * **Hosting it yourself (optional)**: very strict networks (some schools/offices, symmetric NAT on mobile carriers) block direct connections. Add a TURN relay with env vars at build time: `VITE_TURN_URL=turn:host:3478` (comma-separate several), `VITE_TURN_USER`, `VITE_TURN_PASS`. To use your own PeerJS signalling server instead of the free cloud: `VITE_PEER_HOST`, `VITE_PEER_PORT`, `VITE_PEER_PATH`, `VITE_PEER_SECURE`.
 * **Testing on one computer**: in the PvP screen open *Connection → This device*, host in one tab and join from a second tab of the same browser.
 
@@ -220,6 +232,8 @@ Headshots multiply damage (×1.6 rifles, ×2 sniper); damage falls off with dist
 
 **Testing with two or more devices:** Device 1 → Deathmatch → Create Room → share the code / Invite link. Device 2 opens the link (or enters the code) → Join Room. For a single computer, open *Connection → Same device* in two tabs of one browser. Automated coverage: `src/game/deathmatch/*.test.ts` (lobby rules, combat, results, network edge cases, map walkability).
 
+**Slower-device entry:** Deathmatch skips survival icon generation and waits for the spawn neighbourhood's terrain rather than the whole visible city. Distant chunks continue streaming at the selected render distance. The host allows up to 90 seconds for initial download/loading, then starts the unchanged ten-second countdown as soon as everyone is ready. A client never announces readiness just because a loading timer expired.
+
 **Code:** `src/game/deathmatch/` (map blueprint, rules, referee, weapons, hit detection, loot, spawns, protocol, client session, gun models / view model / audio), `src/net/deathmatchNet.ts`, `src/stores/deathmatchStore.ts`, `src/ui/Deathmatch/`, `src/styles/deathmatch.css`.
 
 ## Architecture
@@ -252,7 +266,7 @@ src/
 
 **React vs engine.** React renders menus and HUD only. The world is engine classes: chunk meshes are merged `BufferGeometry` built from typed arrays, creatures are plain objects with a `THREE.Group` rig, and nothing per-block or per-creature is a React component. The engine pushes UI-relevant values into zustand at low frequency and only when they change; the compass and home arrow read the engine directly in their own `requestAnimationFrame` to avoid per-frame React renders.
 
-**Frame loop.** `GameCanvas` registers a single `useFrame(…, 1)`: `game.update(dt)` then `game.render()` (world pass, then a depth-cleared first-person hand pass so tools never clip into walls). Simulation pauses whenever an overlay (pause, backpack, journal, map…) is open.
+**Frame loop.** `GameCanvas` registers a single `useFrame(…, 1)`: `game.update(dt)` then `game.render()` (world pass, then a depth-cleared first-person hand pass so tools never clip into walls). Single-player simulation pauses in overlays (pause, backpack, journal, map…); multiplayer continues.
 
 **Events.** Gameplay publishes typed events (`blockBroken`, `treeFelled`, `itemCrafted`, `creatureFed`, `landmarkFound`…) on the `EventBus`; quests, achievements, the journal, homestead points and harmony all subscribe instead of polling.
 
@@ -280,7 +294,7 @@ IndexedDB database `wildblocks` (v2) with six stores:
 
 World metadata carries `mode: 'survival' | 'build'` and, for Build Home, the plot, time of day, lock and weather; Build Home state adds `build: { objects, nextId, camera }`. Version 1 saves are migrated to version 2 (they become survival worlds) — nothing is discarded.
 
-Terrain is never saved: it is regenerated from the seed and the recorded changes are re-applied when a chunk loads. Autosave runs every 45 s and on pause, tab hide/close, sleeping and quitting; only chunks changed since the last save are written. Every record carries `saveVersion`; `persistence/migrations/index.ts` upgrades old data step by step (`SAVE_VERSION = 2`). A damaged save is never silently overwritten: the loader falls back to the backup and logs why. Settings live in `localStorage` (small, per browser). If IndexedDB is unavailable the game uses an in-memory store and warns on the main menu.
+Generated terrain is regenerated from the seed; recorded changes are re-applied when a chunk loads. Survival autosaves every 45 s; Build Home saves after edits and periodically. Pause, sleeping and quitting save too; tab hiding/closing attempts a best-effort save. Only changed chunks are written. Save metadata, state, edits, map tiles and the previous-state backup commit atomically. Edits made during saving remain pending, failed writes retain data for retry, and Save & Quit stays open on failure. Every record carries `saveVersion`; `persistence/migrations/index.ts` upgrades old data step by step (`SAVE_VERSION = 2`). The loader can recover an unreadable current state from one previous-state backup; this is not a full terrain/version history. Settings live in `localStorage`. All progress is local to the browser/site/device. If IndexedDB is unavailable the game uses an in-memory store and warns on the main menu.
 
 ## Performance & optimisation
 
@@ -289,9 +303,9 @@ Terrain is never saved: it is regenerated from the seed and the recorded changes
 * Batched edits (`world.beginBatch/endBatch`): a felled tree or door toggle remeshes each affected chunk once; neighbour chunks remesh only for border edits or light changes.
 * Creature AI tiers: < 24 blocks = 10 Hz decisions, < 56 = 3 Hz, beyond = asleep and hidden; > 88 = despawned.
 * Pooled particles (one instanced mesh), camera-relative rain in the vertex shader, instanced clouds wrapped in the vertex shader, a pool of 4 point lights for creatures near torches, blob shadows instead of shadow maps.
-* Pixel ratio is clamped (`maxPixelRatio`) and resolution scale is adjustable; **Auto quality** watches frame time and gently lowers render distance → resolution → particles (with a toast).
+* Pixel ratio is clamped (`maxPixelRatio`) and resolution scale is adjustable; **Auto quality** watches sustained frame time and lowers touch-device pixel ratio → render distance (down to 3) → resolution (down to 0.5) → shadows → high particles → clouds, with a toast. Build Home respects lower render-distance settings too.
 * Frustum culling via per-chunk bounding spheres; fog is matched to render distance to hide chunk edges.
-* Verified in a headless play-test: ~1,100 blocks of travel with stable chunk count, geometry count and heap (no leaks, no duplicate entities).
+* Mesh preparation and uploads are bounded between complete chunks; stale meshes are discarded. Standable-column queries are cached by chunk version, furniture lighting avoids full-map copies, and session-owned preview/combat/helper resources are released. See the audit for validation and remaining real-device performance checks.
 
 ## Extending the game
 
@@ -329,7 +343,7 @@ Spawning, AI tiers, combat, feeding and the journal pick it up automatically.
 
 * **F3** toggles the debug overlay: FPS, position, chunk, biome, loaded/meshed chunks, worker queue, triangles, draw calls, entities, light level, seed, time, memory. It can also be enabled in *Settings → Gameplay*.
 * In the console, `window.wildblocks.game` is the running `Game` and `window.wildblocks.stores` exposes the zustand stores (handy for testing: e.g. `wildblocks.stores.inventory.getState().add('torch', 16)`).
-* If Web Workers are blocked (strict CSP), `WorkerPool` falls back to generating on the main thread in 8 ms slices.
+* If Web Workers are blocked (strict CSP), `WorkerPool` falls back to main-thread jobs with an 8 ms scheduling budget between complete jobs; one generation/mesh job can take longer.
 
 ## Testing
 
@@ -370,5 +384,5 @@ Ad policy baked in: no interstitials during play; rewarded ads (if you wire one 
 * **Weather** doesn't change terrain (no puddles/snow build-up); rain only soaks farmland.
 * Creatures other than a tamed companion aren't saved — they respawn naturally around you.
 * **Build Home:** at most 8 lamps light the scene at once (nearest / brightest first); furniture uses simple procedural box models; walls are whole blocks (thin partitions use wall panels); only straight staircases are generated by the tool (landings and L-shapes can be built from stair blocks); copy/paste regions and blueprints are capped at 400k blocks.
-* Build-tooling note: this project was developed in a sandbox where the npm registry was blocked. The code was type-checked against the real three.js r185, React 19, zustand and @react-three/fiber 9.8 type definitions, bundled with esbuild and play-tested in headless Chromium, and the test suite was run on Node's test runner through a Vitest-compatible shim. Run `npm install && npm run typecheck && npm run test && npm run build` once on your machine to confirm with the real Vite/Vitest toolchain.
+* Device performance and networking need release testing on actual target hardware. The audit includes a repeatable acceptance matrix; successful TypeScript, Vitest and Vite checks do not guarantee a particular mobile frame rate.
 # wildblock-by-sachin

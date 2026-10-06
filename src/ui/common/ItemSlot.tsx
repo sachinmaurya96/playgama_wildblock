@@ -1,6 +1,6 @@
 import { memo, useState, type MouseEvent, type ReactNode } from 'react';
 import { itemDef } from '../../data/items';
-import { getIcon } from '../../game/core/AssetManager';
+import { getIcon } from '../../game/core/iconUrls';
 import type { ItemStack } from '../../game/systems/InventoryLogic';
 import { Tooltip } from './Tooltip';
 

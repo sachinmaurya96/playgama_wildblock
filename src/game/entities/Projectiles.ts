@@ -25,10 +25,11 @@ const GRAVITY = 14;
 const SHAFT = mat('#c49563');
 const HEAD = mat('#8a8f96');
 const FLETCH = mat('#f2ead8');
+const ARROW_BOX = new THREE.BoxGeometry(1, 1, 1);
 
 function arrowMesh(): THREE.Group {
   const g = new THREE.Group();
-  const box = new THREE.BoxGeometry(1, 1, 1);
+  const box = ARROW_BOX;
   const shaft = new THREE.Mesh(box, SHAFT);
   shaft.scale.set(0.035, 0.035, 0.7);
   const head = new THREE.Mesh(box, HEAD);

@@ -4,6 +4,7 @@ import { blockId, SHAPE } from '../world/BlockRegistry';
 import { blockObject } from './BlockGeometry';
 import { buildToolMesh, part } from './Models';
 import type { AssetManager } from '../core/AssetManager';
+import { Spring } from '../core/Spring';
 
 /**
  * First-person arm + held item, rendered in its own pass after the world
@@ -83,29 +84,6 @@ function sampleAction(def: ActionDef, t: number, out: Required<Pose>): void {
   const [t1, b] = keys[i + 1];
   const k = smooth01(Math.min(1, Math.max(0, (t - t0) / Math.max(1e-6, t1 - t0))));
   for (const f of ['px', 'py', 'pz', 'rx', 'ry', 'rz'] as const) out[f] = (a[f] ?? 0) + ((b[f] ?? 0) - (a[f] ?? 0)) * k;
-}
-
-/** Critically damped spring (frame-rate independent). */
-class Spring {
-  x = 0;
-  v = 0;
-  constructor(public omega: number) {}
-  step(target: number, dt: number): number {
-    // sub-step for stability on long frames
-    let rem = dt;
-    while (rem > 0) {
-      const h = Math.min(rem, 1 / 60);
-      const a = this.omega * this.omega * (target - this.x) - 2 * this.omega * this.v;
-      this.v += a * h;
-      this.x += this.v * h;
-      rem -= h;
-    }
-    return this.x;
-  }
-  reset(x = 0) {
-    this.x = x;
-    this.v = 0;
-  }
 }
 
 export interface HeldSpec {
@@ -219,6 +197,7 @@ export class FirstPersonViewModel {
       this.itemObj.traverse((o) => {
         const s = o as THREE.Mesh;
         if ((s as unknown as THREE.Sprite).isSprite || s.userData.ownMaterial) (s.material as THREE.Material).dispose();
+        if (s.userData.ownGeometry) s.geometry.dispose();
       });
       this.itemObj = null;
     }
@@ -248,6 +227,7 @@ export class FirstPersonViewModel {
     if (spec.texture) {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: spec.texture, transparent: true, alphaTest: 0.3, side: THREE.DoubleSide }));
       m.userData.ownMaterial = true;
+      m.userData.ownGeometry = true;
       return { obj: m, category: 'sprite' };
     }
     if (!spec.item) return { obj: null, category: 'none' };
@@ -269,8 +249,10 @@ export class FirstPersonViewModel {
   update(i: ViewModelInput): void {
     const dt = Math.min(i.dt, 0.1);
     this.scene.visible = i.visible;
-    this.camera.aspect = i.aspect;
-    this.camera.updateProjectionMatrix();
+    if (this.camera.aspect !== i.aspect) {
+      this.camera.aspect = i.aspect;
+      this.camera.updateProjectionMatrix();
+    }
     this.time += dt;
 
     // ---- action curve (analytic; ends exactly at rest)
@@ -336,5 +318,10 @@ export class FirstPersonViewModel {
       ],
       action: this.action,
     };
+  }
+
+  dispose(): void {
+    this.setHeld(null);
+    this.scene.clear();
   }
 }

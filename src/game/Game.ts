@@ -17,6 +17,7 @@ import { useBuildStore } from '../stores/buildStore';
 import { useDeathmatchStore } from '../stores/deathmatchStore';
 import { usePvpStore } from '../stores/pvpStore';
 import { AssetManager } from './core/AssetManager';
+import { LOAD_TIMEOUT_SECONDS } from './deathmatch/DeathmatchRules';
 import { audio } from './core/audio';
 import type { AudioManager, Mood } from './core/AudioManager';
 import { EventBus } from './core/EventBus';
@@ -33,6 +34,7 @@ import { CITY_G } from './deathmatch/DeathmatchMap';
 import { dmNet } from '../net/deathmatchNet';
 import { Player } from './player/Player';
 import { PlayerInteraction } from './player/PlayerInteraction';
+import { FurnitureInteraction } from './player/FurnitureInteraction';
 import { BlockOutline } from './rendering/Overlays';
 import { FirstPersonViewModel } from './rendering/FirstPersonViewModel';
 import { Particles, Rain } from './rendering/Particles';
@@ -53,6 +55,7 @@ import { ChunkManager } from './world/ChunkManager';
 import { localIndex } from './world/coordinates';
 import { ckey, World } from './world/World';
 import { WorkerPool } from './workers/WorkerPool';
+import { effectivePixelRatio, nextQualityReduction } from './core/graphics';
 import { gameRegistry } from './registry';
 import { touchEnabled } from '../app/mobile';
 import type { Chunk } from './world/Chunk';
@@ -68,12 +71,15 @@ export interface GameInit {
   mods: Map<number, [number, number][]>;
 }
 
+type SaveReason = 'auto' | 'pause' | 'quit' | 'sleep' | 'created' | 'hidden' | 'quiet';
+
 /**
  * Engine root. Owns the voxel world, systems and rendering objects; React only
  * mounts the canvas and reads the zustand stores this class updates.
  */
 export class Game {
-  static current: Game | null = null;
+  static get current(): Game | null { return gameRegistry.current; }
+  static set current(game: Game | null) { gameRegistry.current = game; }
 
   readonly renderer: THREE.WebGLRenderer;
   readonly scene: THREE.Scene;
@@ -94,6 +100,7 @@ export class Game {
   readonly viewModel: FirstPersonViewModel;
   readonly player: Player;
   readonly interaction: PlayerInteraction;
+  readonly rest: FurnitureInteraction;
   readonly entities: EntityManager;
   readonly drops: DroppedItems;
   readonly boats: Boats;
@@ -123,7 +130,7 @@ export class Game {
   forestFactor = 0;
   riverLevel = 0;
   waterfallLevel = 0;
-  pendingBed: { x: number; y: number; z: number } | null = null;
+  pendingBed: { x: number; y: number; z: number; objectId?: number } | null = null;
   /** Compass target for the current quest (e.g. nearest river), if any. */
   questTarget: { x: number; z: number } | null = null;
   private questTargetFor = '';
@@ -134,9 +141,10 @@ export class Game {
   private debugTimer = 0;
   private lightTimer = 0;
   private ambientFxTimer = 0;
-  private saving = false;
+  private savePromise: Promise<boolean> | null = null;
   private suppressPause = false;
-  private frameTimes: number[] = [];
+  private frameTimeSum = 0;
+  private frameSamples = 0;
   private qualityTimer = 0;
   private lowFpsStrikes = 0;
   private captureThumb = false;
@@ -181,6 +189,7 @@ export class Game {
     this.viewModel = new FirstPersonViewModel(this.assets);
     this.player = new Player(this);
     this.interaction = new PlayerInteraction(this);
+    this.rest = new FurnitureInteraction(this);
     this.entities = new EntityManager(this);
     this.drops = new DroppedItems(this);
     this.trees = new TreeFelling(this);
@@ -233,7 +242,6 @@ export class Game {
       this.dm = new DeathmatchSession(this);
     }
     Game.current = this;
-    gameRegistry.current = this;
     useGameStore.setState({ cursorFree: false });
     this.input.onCursorToggle = () => this.toggleCursor();
     this.input.onCursorChange = (free) => {
@@ -250,10 +258,8 @@ export class Game {
 
   applyGraphicsSettings(): void {
     const g = useSettingsStore.getState().graphics;
-    // Build Home lots are flat and cheap to mesh: keep the scenery around the lot in view
-    this.chunks.setRenderRadius(this.meta.mode === 'build' ? Math.max(6, g.renderDistance) : g.renderDistance);
-    const dpr = Math.min(window.devicePixelRatio || 1, g.maxPixelRatio) * g.resolutionScale;
-    this.renderer.setPixelRatio(Math.max(0.5, dpr));
+    this.chunks.setRenderRadius(g.renderDistance);
+    this.renderer.setPixelRatio(effectivePixelRatio(g, window.devicePixelRatio));
     this.particles.density = g.particles === 'off' ? 0 : g.particles === 'low' ? 0.35 : 1;
     if (this.camera.fov !== g.fov) {
       this.camera.fov = g.fov;
@@ -264,6 +270,9 @@ export class Game {
   // ---------------------------------------------------------------- loading
 
   async start(state: WorldStateSave | null, onProgress: (p: number, stage: string) => void): Promise<void> {
+    if (this.disposed) return;
+    // City Clash uses its own weapon HUD/models, with no survival item icons.
+    if (this.dm) return this.startDeathmatch(onProgress);
     onProgress(0.02, 'Packing backpack');
     await this.assets.generateIcons(this.renderer, (f) => onProgress(0.02 + f * 0.18, 'Packing backpack'));
     if (this.disposed) return;
@@ -280,7 +289,6 @@ export class Game {
       }
       return;
     }
-    if (this.dm) return this.startDeathmatch(onProgress);
     if (this.pvp) return this.startPvp(onProgress);
     const ws = useWorldStore.getState();
     const inv = useInventoryStore.getState();
@@ -415,15 +423,19 @@ export class Game {
     this.player.yaw = yaw;
     this.player.pitch = 0;
     this.player.cameraMode = 'first';
-    const needed = Math.max(3, Math.min(4, this.chunks.renderRadius));
+    // Load a safe neighbourhood first; the rest streams during the countdown
+    // and match at the player's configured render distance.
+    const needed = Math.min(2, this.chunks.renderRadius);
     const t0 = performance.now();
-    await new Promise<void>((resolve) => {
+    const loadingMotion = new THREE.Vector3();
+    await new Promise<void>((resolve, reject) => {
       const tick = () => {
         if (this.disposed) return resolve();
-        this.chunks.update(0.05, this.player.position.x, this.player.position.z, this.player.lookDirection(), new THREE.Vector3());
+        this.chunks.update(0.05, this.player.position.x, this.player.position.z, this.player.lookDirection(), loadingMotion);
         const r = this.chunks.readiness(needed);
         onProgress(0.25 + r * 0.7, 'Building the city');
-        if (r >= 1 || performance.now() - t0 > 25000) resolve();
+        if (r >= 1) resolve();
+        else if (performance.now() - t0 > LOAD_TIMEOUT_SECONDS * 1000) reject(new Error('The city could not finish loading. Choose Low graphics and rejoin the room.'));
         else setTimeout(tick, 30);
       };
       tick();
@@ -746,6 +758,7 @@ export class Game {
     }
     const freeCam = !!this.build?.usesFreeCamera();
     this.player.update(dt, simulate && !freeCam);
+    this.rest.update(dt, simulate);
     if (this.build) {
       const focus = this.build.focus();
       this.env.update(dt, false);
@@ -757,15 +770,7 @@ export class Game {
       this.pvp?.update(dt);
       this.fx.update(dt);
       if (simulate) this.farming.update(dt, this.world, this.growthNow(), this.env.rain > 0.3);
-      this.sky.follow(this.camera);
-      this.backdrop?.follow(this.camera);
-      this.clouds.update(dt, this.camera, this.env.cover + this.env.rain);
-      this.particles.update(dt, this.time);
-      this.updateAmbience(dt, !simulate);
-      this.updateViewModel(dt, gs.hudHidden);
-      this.monitorPerformance(rawDt);
-      this.updateDebug(dt);
-      this.input.endFrame();
+      this.finishFrame(dt, rawDt, simulate, gs.hudHidden);
       return;
     }
     if (this.dm) {
@@ -775,18 +780,11 @@ export class Game {
       this.env.update(dt, false);
       this.chunks.update(dt, this.player.position.x, this.player.position.z, this.player.lookDirection(), this.player.body.vel);
       this.player.updateCamera(this.camera, dt);
-      this.sky.follow(this.camera);
-      this.clouds.update(dt, this.camera, this.env.cover);
-      this.particles.update(dt, this.time);
-      this.updateAmbience(dt, !simulate);
-      this.updateViewModel(dt, gs.hudHidden);
-      this.monitorPerformance(rawDt);
-      this.updateDebug(dt);
-      this.input.endFrame();
+      this.finishFrame(dt, rawDt, simulate, gs.hudHidden);
       return;
     }
     this.boats.update(dt, simulate && !this.player.waitingForGround);
-    this.interaction.update(dt, simulate && !this.player.waitingForGround);
+    this.interaction.update(dt, simulate && !this.player.waitingForGround && !this.rest.consumed);
     this.arrows.update(dt);
     this.pvp?.update(dt);
     for (const c of this.entities.creatures) this.fx.follow(`c:${c.id}`, c.body.pos.x, c.body.pos.y + c.def.height, c.body.pos.z);
@@ -803,13 +801,18 @@ export class Game {
     const look = this.player.lookDirection();
     this.chunks.update(dt, this.player.position.x, this.player.position.z, look, this.player.body.vel);
     this.player.updateCamera(this.camera, dt);
+    this.finishFrame(dt, rawDt, simulate, gs.hudHidden);
+  }
+
+  /** Shared visual and input bookkeeping, after each mode has simulated. */
+  private finishFrame(dt: number, rawDt: number, simulate: boolean, hudHidden: boolean) {
     this.sky.follow(this.camera);
     this.backdrop?.follow(this.camera);
-    this.clouds.update(dt, this.camera, this.env.cover + this.env.rain);
+    this.clouds.update(dt, this.camera, this.dm ? this.env.cover : this.env.cover + this.env.rain);
     this.particles.update(dt, this.time);
     this.updateAmbience(dt, !simulate);
-    this.updateLights(dt);
-    this.updateViewModel(dt, gs.hudHidden);
+    if (!this.build && !this.dm) this.updateLights(dt);
+    this.updateViewModel(dt, hudHidden);
     this.monitorPerformance(rawDt);
     this.updateDebug(dt);
     this.input.endFrame();
@@ -1100,10 +1103,23 @@ export class Game {
 
   // ---------------------------------------------------------------- sleep / death
 
+  /** Recheck the bed after an overlay or a network request; furniture may have moved. */
+  bedAvailable(bed: NonNullable<Game['pendingBed']>, pos = this.player.position): boolean {
+    const obj = bed.objectId === undefined ? null : this.build?.objects.get(bed.objectId);
+    if (bed.objectId !== undefined ? obj?.def.interaction !== 'bed' : BLOCK_DEFS[this.world.get(bed.x, bed.y, bed.z)]?.interact !== 'bed') return false;
+    const x = obj?.x ?? bed.x + 0.5, y = obj?.y ?? bed.y, z = obj?.z ?? bed.z + 0.5;
+    return this.chunks.isReady(x, z) && Math.hypot(pos.x - x, pos.z - z) <= 6 && Math.abs(pos.y - y) <= 3;
+  }
+
   sleepAtBed(action: 'home' | 'sleep'): void {
     const bed = this.pendingBed;
     const gs = useGameStore.getState();
-    if (!bed) return;
+    if (!bed || this.player.dead) return;
+    if (!this.bedAvailable(bed)) {
+      gs.toast('Walk close to an available bed to rest.', 'info', '🛏️');
+      this.closeOverlay();
+      return;
+    }
     useWorldStore.getState().setHome({ x: bed.x, y: bed.y + 1, z: bed.z });
     if (action === 'home') {
       gs.toast('Home set! You will wake up here.', 'info', '🏡');
@@ -1116,21 +1132,35 @@ export class Game {
       return;
     }
     const f = this.clock.dayFraction;
-    if (f > 0.26 && f < 0.72) {
+    if (!this.isBuild && f > 0.26 && f < 0.72) {
       gs.toast('It is too bright to sleep. Your home is set, though!', 'info', '☀️');
       this.closeOverlay();
       return;
     }
-    const comfort = comfortAround(this.world, bed.x, bed.y, bed.z);
-    const secs = this.clock.skipToMorning();
-    void secs;
+    if (this.pvp && !this.pvp.isHost) {
+      this.pvp.requestSleep(bed);
+      this.closeOverlay();
+      return;
+    }
+    this.completeBedSleep();
+  }
+
+  /** Apply rest after the host has accepted a shared-world sleep request. */
+  completeBedSleep(advanceClock = true): void {
+    const bed = this.pendingBed;
+    if (!bed || this.player.dead || !this.bedAvailable(bed)) return;
+    const gs = useGameStore.getState();
+    const comfort = comfortAround(this.world, bed.x, Math.floor(bed.y), bed.z);
+    if (advanceClock) this.clock.skipToMorning();
+    if (this.build) useBuildStore.getState().set({ dayFraction: this.clock.dayFraction });
+    this.pvp?.syncWorldClock();
     this.player.comfort = comfort;
     this.player.heal(40, 20);
     this.player.addBuff('well_rested', 240 + comfort * 45);
     this.audio.play('sleep');
     this.bus.emit('slept', { comfort });
     // hostile night creatures flee at dawn
-    for (const c of [...this.entities.creatures]) if (c.def.hostile && c.def.shy) this.entities.poof(c);
+    for (const c of this.entities.creatures) if (c.def.hostile && c.def.shy) this.entities.poof(c);
     useGameStore.setState({ overlay: null });
     gs.toast(comfort > 0 ? `Good morning! Comfort ${comfort}: you feel well rested.` : 'Good morning! Furniture near your bed adds comfort.', 'info', '🌅');
     this.input.requestLock();
@@ -1138,6 +1168,7 @@ export class Game {
   }
 
   onPlayerDeath(cause: string): void {
+    this.rest.release();
     if (this.boats.riding) this.boats.dismount();
     if (this.dm) return; // the host referee owns Deathmatch deaths
     if (this.pvp?.onLocalDeath(cause)) return;
@@ -1164,8 +1195,41 @@ export class Game {
     }
     useWorldStore.setState({ deathMarker: { x: Math.floor(p.x), z: Math.floor(p.z) } });
     useGameStore.setState({ death: { cause, lost } });
-    this.openOverlay('death');
     this.bus.emit('playerDied', { cause });
+    const atHome = !!useWorldStore.getState().home;
+    this.respawn(atHome ? 'home' : 'camp');
+    useGameStore.getState().toast(
+      `Overcome by ${cause}. Respawned at ${atHome ? 'home' : 'starting camp'}. ${lost > 0 ? `${lost} items dropped — follow the lost-satchel marker to recover them.` : 'No items dropped.'}`,
+      lost > 0 ? 'warn' : 'info', '🍂',
+    );
+  }
+
+  /** Pause-menu rescue for a living player. Keeps inventory, health and progress. */
+  async quickRespawn(): Promise<string | null> {
+    if (this.disposed || !this.ready) return 'The world is not ready yet.';
+    if (this.dm) return 'Quick Respawn is unavailable in Deathmatch.';
+    if (this.player.dead) return 'You are already respawning.';
+    if (this.build) {
+      // Existing navigation checks furniture as well as terrain and moves both cameras.
+      const why = await this.build.navigation.teleportTo(0, 6);
+      if (why) return why;
+      if (this.disposed) return 'This project is closed.';
+      this.closeOverlay();
+      return null;
+    }
+    if (this.pvp) {
+      const why = this.pvp.quickRespawn();
+      if (why) return why;
+      this.closeOverlay();
+      return null;
+    }
+    if (this.boats.riding) this.boats.dismount();
+    const atHome = !!useWorldStore.getState().home;
+    this.respawn(atHome ? 'home' : 'camp');
+    this.player.invulnerable = Math.max(this.player.invulnerable, 2);
+    this.audio.play('chime');
+    useGameStore.getState().toast(`Rescued! Back at ${atHome ? 'home' : 'starting camp'}. Health and items kept.`, 'info', '🆘');
+    return null;
   }
 
   respawn(where: 'home' | 'camp' | 'safe'): void {
@@ -1184,6 +1248,7 @@ export class Game {
       p.invulnerable = 3;
     }
     this.ensureSafePosition();
+    p.waitingForGround = !this.chunks.isReady(p.position.x, p.position.z);
     p.syncHud();
     if (where !== 'safe') {
       useGameStore.setState({ death: null });
@@ -1203,10 +1268,11 @@ export class Game {
 
   buildState(): WorldStateSave {
     const p = this.player;
+    const pos = this.rest?.savePosition() ?? p.position;
     return {
       id: this.meta.id,
       saveVersion: SAVE_VERSION,
-      player: { x: p.position.x, y: p.position.y, z: p.position.z, yaw: p.yaw, pitch: p.pitch, vitality: p.vitality, energy: p.energy, buffs: p.buffs.map((b) => ({ ...b })) },
+      player: { x: pos.x, y: pos.y, z: pos.z, yaw: p.yaw, pitch: p.pitch, vitality: p.vitality, energy: p.energy, buffs: p.buffs.map((b) => ({ ...b })) },
       inventory: useInventoryStore.getState().snapshot(),
       progress: useWorldStore.getState().snapshot(),
       time: this.clock.time,
@@ -1220,10 +1286,24 @@ export class Game {
     };
   }
 
-  async saveNow(reason: 'auto' | 'pause' | 'quit' | 'sleep' | 'created' | 'hidden' | 'quiet'): Promise<void> {
+  async saveNow(reason: SaveReason): Promise<boolean> {
     // matches aren't saved; a Build Home you opened to friends keeps saving (your own project)
-    if (!this.ready || this.saving || this.dm || (this.pvp && this.meta.coop !== 'host')) return;
-    this.saving = true;
+    if (!this.ready || this.disposed) return false;
+    if (this.dm || (this.pvp && this.meta.coop !== 'host')) return true;
+    if (this.savePromise) {
+      const saved = await this.savePromise;
+      if (reason === 'auto' || reason === 'quiet') return saved;
+      // Quit/pause/sharing must also persist edits made during the older save.
+      return this.saveNow(reason);
+    }
+    const pending = this.persistSnapshot(reason);
+    this.savePromise = pending;
+    try { return await pending; }
+    finally { if (this.savePromise === pending) this.savePromise = null; }
+  }
+
+  private async persistSnapshot(reason: SaveReason): Promise<boolean> {
+    let maps: MapTileRecord[] = [];
     try {
       // keep an open chest's live contents
       const open = useInventoryStore.getState().container;
@@ -1231,16 +1311,21 @@ export class Game {
       this.captureThumb = reason === 'quit' || reason === 'pause' || !this.meta.thumbnail;
       if (this.captureThumb) this.render();
       this.meta = { ...this.meta, lastPlayed: Date.now(), playTime: this.clock.playTime };
-      const maps = this.pendingMaps;
+      maps = this.pendingMaps;
       this.pendingMaps = [];
+      const objectRevision = this.build?.objects.revision;
       await writeSave(this.meta, this.buildState(), this.world, maps);
-      if (this.build) useBuildStore.getState().set({ lastSaved: Date.now(), dirty: false });
+      if (this.build) useBuildStore.getState().set({
+        lastSaved: Date.now(),
+        ...(this.world.dirtyMods.size === 0 && this.build.objects.revision === objectRevision ? { dirty: false } : {}),
+      });
       if (reason !== 'created' && reason !== 'hidden' && reason !== 'quiet') useGameStore.getState().toast(this.build ? 'Project saved' : 'World saved', 'save', '💾');
+      return true;
     } catch (e) {
+      this.pendingMaps.unshift(...maps);
       console.error('[WildBlocks] save failed', e);
       useGameStore.getState().toast('Saving failed — check browser storage settings.', 'warn', '⚠️');
-    } finally {
-      this.saving = false;
+      return false;
     }
   }
 
@@ -1259,31 +1344,27 @@ export class Game {
 
   private monitorPerformance(rawDt: number) {
     const settings = useSettingsStore.getState();
-    if (!this.ready || useGameStore.getState().overlay !== null) return;
-    this.frameTimes.push(rawDt);
+    if (!this.ready || useGameStore.getState().overlay !== null || document.hidden || !settings.graphics.autoQuality || rawDt <= 0 || rawDt > 1) {
+      this.frameTimeSum = this.frameSamples = this.qualityTimer = this.lowFpsStrikes = 0;
+      return;
+    }
+    this.frameTimeSum += rawDt;
+    this.frameSamples++;
     this.qualityTimer += rawDt;
     if (this.qualityTimer < 5) return;
-    const avg = this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length;
-    this.frameTimes = [];
+    const avg = this.frameTimeSum / this.frameSamples;
+    this.frameTimeSum = this.frameSamples = 0;
     this.qualityTimer = 0;
-    if (!settings.graphics.autoQuality || document.hidden) return;
     if (avg > 1 / 40) this.lowFpsStrikes++;
     else this.lowFpsStrikes = Math.max(0, this.lowFpsStrikes - 1);
     if (this.lowFpsStrikes >= 2) {
       this.lowFpsStrikes = 0;
-      const g = settings.graphics;
-      const dpr = window.devicePixelRatio || 1;
-      if (this.input.touch.active && g.maxPixelRatio > 1.25 && dpr > 1.25) {
-        // phones: trim the pixel ratio first — barely visible on a small, dense screen
-        settings.update('graphics', { maxPixelRatio: Math.round((g.maxPixelRatio - 0.25) * 100) / 100 });
-        useGameStore.getState().toast('Adjusted graphics a little to keep things smooth.', 'info', '⚙️');
-      } else if (g.renderDistance > (this.input.touch.active ? 3 : 4)) {
-        settings.update('graphics', { renderDistance: g.renderDistance - 1 });
-        useGameStore.getState().toast(`Lowered render distance to ${g.renderDistance - 1} to keep things smooth.`, 'info', '⚙️');
-      } else if (g.resolutionScale > 0.7) {
-        settings.update('graphics', { resolutionScale: Math.round((g.resolutionScale - 0.15) * 100) / 100 });
-        useGameStore.getState().toast('Lowered resolution a little to keep things smooth.', 'info', '⚙️');
-      } else if (g.particles === 'high') settings.update('graphics', { particles: 'low' });
+      const patch = nextQualityReduction(settings.graphics, this.input.touch.active, window.devicePixelRatio || 1);
+      if (!patch) return;
+      settings.update('graphics', patch);
+      useGameStore.getState().toast(patch.renderDistance !== undefined
+        ? `Lowered render distance to ${patch.renderDistance} to keep things smooth.`
+        : 'Adjusted graphics a little to keep things smooth.', 'info', '⚙️');
     }
   }
 
@@ -1324,6 +1405,7 @@ export class Game {
 
   dispose(): void {
     this.disposed = true;
+    this.rest.dispose();
     for (const o of this.offs) o();
     this.build?.dispose();
     this.build = null;
@@ -1339,6 +1421,8 @@ export class Game {
     this.boats.clear();
     this.arrows.clear();
     this.fx.clear();
+    this.viewModel.dispose();
+    this.outline.dispose();
     this.pvp?.dispose();
     this.pvp = null;
     this.dm?.dispose();
@@ -1352,7 +1436,6 @@ export class Game {
     this.audio.setMood('silent');
     usePlayerStore.getState().sync({ vitality: 100, energy: 100, buffs: [] });
     if (Game.current === this) Game.current = null;
-    if (gameRegistry.current === this) gameRegistry.current = null;
     useGameStore.setState({ cursorFree: false });
   }
 }

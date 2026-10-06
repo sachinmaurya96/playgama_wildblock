@@ -111,9 +111,9 @@ export function isStairs(world: World, x: number, y: number, z: number): boolean
  */
 export function moveBody(world: World, b: Body, dt: number, stepHeight = 0.55, edgeSafe = false): MoveResult {
   const res: MoveResult = { grounded: false, hitX: false, hitZ: false, hitCeiling: false, stepped: 0 };
-  const total = new THREE.Vector3().copy(b.vel).multiplyScalar(dt);
-  const steps = Math.max(1, Math.ceil(Math.max(Math.abs(total.x), Math.abs(total.y), Math.abs(total.z)) / 0.4));
-  const sx = total.x / steps, sy = total.y / steps, sz = total.z / steps;
+  const dx = b.vel.x * dt, dy = b.vel.y * dt, dz = b.vel.z * dt;
+  const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)) / 0.4));
+  const sx = dx / steps, sy = dy / steps, sz = dz / steps;
   for (let i = 0; i < steps; i++) {
     const y = sweepY(world, b, sy);
     if (y.hit) {

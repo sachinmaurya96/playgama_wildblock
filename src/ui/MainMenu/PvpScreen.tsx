@@ -42,13 +42,13 @@ export function inviteCodeFromUrl(): string {
  * PvP lobby: host a room (you get a 6-letter code to share) or join one.
  * Peer-to-peer over WebRTC — no game server, nothing to pay for.
  */
-export function PvpScreen() {
+export function PvpScreen({ initialTab = 'host' }: { initialTab?: 'host' | 'join' }) {
   const invite = inviteCodeFromUrl();
-  const [tab, setTab] = useState<'host' | 'join'>(invite ? 'join' : 'host');
+  const [tab, setTab] = useState<'host' | 'join'>(invite ? 'join' : initialTab);
   const [name, setName] = useState<string>(() => load('wb-pvp-name', ''));
   const [color, setColor] = useState<string>(() => load('wb-pvp-color', PVP_COLORS[0]));
   const [code, setCode] = useState(invite);
-  const [settings, setSettings] = useState<PvpSettings>(() => ({ ...DEFAULT_PVP_SETTINGS, ...load<Partial<PvpSettings>>('wb-pvp-settings', {}), seedText: '' }));
+  const [settings, setSettings] = useState<PvpSettings>(() => ({ ...DEFAULT_PVP_SETTINGS, ...load<Partial<PvpSettings>>('wb-pvp-settings', {}), minutes: 0, seedText: '' }));
   const [online, setOnline] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const status = usePvpStore((s) => s.status);
@@ -65,6 +65,7 @@ export function PvpScreen() {
   const playerName = () => (name.trim() || 'Explorer').slice(0, 16);
 
   const host = async () => {
+    if (busy) return;
     setError(null);
     setBusy(online ? 'Opening your room…' : 'Opening a local room…');
     audio.init();
@@ -81,6 +82,7 @@ export function PvpScreen() {
     }
   };
   const join = async () => {
+    if (busy) return;
     setError(null);
     const c = normalizeCode(code);
     if (c.length !== 6) {
@@ -107,11 +109,13 @@ export function PvpScreen() {
       <MenuBackground />
       <form className="panel form-panel pvp-panel" onSubmit={(e) => { e.preventDefault(); void (tab === 'host' ? host() : join()); }}>
         <button type="button" className="close-x" onClick={back} aria-label="Back">✕</button>
-        <h2 className="panel-title">🎮 PvP Mode</h2>
-        <p className="muted pvp-intro">Play with friends on a real WildBlocks map — battle each other or build together. Free & peer-to-peer: players connect straight to each other, no server needed. Up to 8 players.</p>
+        <h2 className="panel-title">{tab === 'join' ? '🤝 Join Friend’s World' : '🎮 PvP Mode'}</h2>
+        <p className="muted pvp-intro">{tab === 'join'
+          ? 'Enter your friend’s six-character room code to join their shared survival world, Build Home project or PvP game. Ask them to open Settings → Play with Friends and read the code in their in-game room bar. The host must stay connected.'
+          : 'Play with friends on a real WildBlocks map — battle each other or build together. Free & peer-to-peer: players connect straight to each other, no server needed. Up to 8 players.'}</p>
         <div className="tabs pvp-tabs" role="tablist">
-          <button type="button" role="tab" className={`tab ${tab === 'host' ? 'active' : ''}`} onClick={() => setTab('host')}>🏰 Host a match</button>
-          <button type="button" role="tab" className={`tab ${tab === 'join' ? 'active' : ''}`} onClick={() => setTab('join')}>🔑 Join with code</button>
+          <button type="button" role="tab" aria-selected={tab === 'host'} disabled={!!busy} className={`tab ${tab === 'host' ? 'active' : ''}`} onClick={() => setTab('host')}>🏰 Host a match</button>
+          <button type="button" role="tab" aria-selected={tab === 'join'} disabled={!!busy} className={`tab ${tab === 'join' ? 'active' : ''}`} onClick={() => setTab('join')}>🔑 Join with code</button>
         </div>
 
         <div className="pvp-row">
@@ -173,17 +177,10 @@ export function PvpScreen() {
             </div>
             {settings.style !== 'together' && <div className="pvp-row">
               <label className="field grow">
-                <span>Match length</span>
-                <select value={settings.minutes} onChange={(e) => set('minutes', Number(e.target.value))}>
-                  {[5, 10, 15, 20].map((m) => <option key={m} value={m}>{m} minutes</option>)}
-                  <option value={0}>No time limit</option>
-                </select>
-              </label>
-              <label className="field grow">
                 <span>Win at</span>
                 <select value={settings.killLimit} onChange={(e) => set('killLimit', Number(e.target.value))}>
                   {[5, 10, 15, 25].map((m) => <option key={m} value={m}>{m} takedowns</option>)}
-                  <option value={0}>Most takedowns when time runs out</option>
+                  <option value={0}>No takedown limit</option>
                 </select>
               </label>
             </div>}

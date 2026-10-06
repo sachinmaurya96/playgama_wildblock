@@ -64,6 +64,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  max-height: 100%;
+  overflow-y: auto;
   gap: 22px;
   margin-right: auto;
   margin-left: clamp(0px, 8vw, 140px);
@@ -147,6 +149,13 @@
 .howto-card { background: rgba(255, 255, 255, 0.6); border: 2px solid var(--paper-3); border-radius: 14px; padding: 14px; }
 .howto-card p { margin: 6px 0 0; line-height: 1.45; color: var(--ink-soft); font-size: 0.92em; }
 .howto-icon { font-size: 28px; }
+.howto-intro { margin: 0; padding-right: 18px; }
+.howto-topics { flex-wrap: wrap; gap: 6px; }
+.howto-topics .tab { white-space: normal; }
+.howto-content { display: flex; flex-direction: column; gap: 18px; }
+.howto-content .sub-title { margin-bottom: 10px; }
+.howto-panel > * { flex-shrink: 0; }
+@media (max-width: 420px) { .howto-grid { grid-template-columns: minmax(0, 1fr); } }
 .sub-title { margin: 6px 0 0; color: var(--wood-dark); }
 
 /* ============================================================= settings */
@@ -316,6 +325,11 @@
 
 .context-prompt { position: absolute; left: 50%; top: calc(50% + 34px); transform: translateX(-50%); background: rgba(40, 30, 20, 0.55); color: #fff6e0; border-radius: 999px; padding: 5px 14px; font-weight: 800; font-size: 14px; white-space: nowrap; backdrop-filter: blur(2px); }
 .context-prompt .kbd { border-color: #ffd166; color: #ffd166; margin-right: 4px; }
+.rest-actions { position: absolute; left: 50%; top: calc(50% + 74px); transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: max-content; max-width: calc(100% - 24px); z-index: 12; pointer-events: auto; }
+.rest-actions .btn { min-height: 44px; white-space: nowrap; touch-action: manipulation; }
+@media (max-height: 520px) {
+  .rest-actions { top: calc(50% - 68px); }
+}
 .subtitle { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); background: rgba(0, 0, 0, 0.6); color: #fff; border-radius: 8px; padding: 4px 12px; font-weight: 700; font-size: 14px; }
 .home-arrow { position: absolute; left: 50%; top: 88px; transform: translateX(-50%); display: none; flex-direction: column; align-items: center; color: #fff6e0; font-weight: 800; text-shadow: 0 1px 3px #000; }
 .home-arrow .arrow { display: inline-block; transform: rotate(calc(var(--rot) - 90deg)); font-size: 20px; color: #ffd166; }
@@ -388,12 +402,13 @@
 .inv-help { font-size: 12px; margin: 0; }
 .slot-num { font-size: 10px; }
 
-.crafting { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; overflow: hidden; }
+.crafting { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.crafting > .panel-title, .crafting > .station-tabs, .crafting > .craft-filters { flex-shrink: 0; }
 .station-tabs .tab { font-size: 0.82em; }
 .craft-filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .cat-tabs .tab { min-width: 40px; justify-content: center; padding: 0.3em 0.55em; }
 .search { flex: 1; min-width: 100px; padding: 0.45em 0.7em; }
-.craft-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; flex: 1; }
+.craft-body { display: flex; flex-direction: column; gap: 8px; min-height: min(260px, 40vh); flex: 1; }
 .recipe-list { display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 90px; padding-right: 4px; }
 .recipe { display: flex; align-items: center; gap: 8px; border: 2px solid transparent; background: rgba(255, 255, 255, 0.45); border-radius: 10px; padding: 3px 8px; cursor: pointer; text-align: left; font-weight: 800; opacity: 0.55; }
 .recipe.ok { opacity: 1; }
@@ -401,7 +416,9 @@
 .recipe.locked { filter: grayscale(0.7); }
 .recipe-name { flex: 1; }
 .lock-small { font-size: 10px; background: var(--paper-3); border-radius: 6px; padding: 1px 5px; }
-.recipe-detail { flex-shrink: 0; background: rgba(255, 255, 255, 0.6); border: 2px solid var(--paper-3); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.recipe-detail { flex-shrink: 1; min-height: 0; background: rgba(255, 255, 255, 0.6); border: 2px solid var(--paper-3); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.recipe-detail-content { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.recipe-detail-content > * { flex-shrink: 0; }
 .rd-head { display: flex; gap: 10px; align-items: center; }
 .rd-name { font-weight: 900; font-size: 1.1em; color: var(--wood-dark); }
 .rd-desc { font-size: 12px; }
@@ -411,7 +428,7 @@
 .ing.have b { color: var(--forest); }
 .ing.need { opacity: 0.6; }
 .ing.need b { color: var(--danger); }
-.craft-buttons { display: flex; gap: 6px; align-items: center; }
+.craft-buttons { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; flex-shrink: 0; }
 .warn-text { color: var(--danger); font-weight: 700; font-size: 12px; margin: 0; }
 .small-print { font-size: 12px; margin: 0; }
 
@@ -587,7 +604,7 @@
 .inventory-panel.compact .inv-head { width: 100%; padding-right: 0; }
 .inventory-panel.compact .panel-title { font-size: 1.05em; }
 .inventory-panel.compact .crafting { overflow: visible; height: auto; }
-.inventory-panel.compact .recipe-list { max-height: none; }
+.inventory-panel.compact .recipe-list { flex: 0 0 auto; max-height: min(220px, 30vh); }
 .inventory-panel.compact .character-card { flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
 .inventory-panel.compact .portrait { max-width: 120px; }
 .inventory-panel.compact .close-x { top: 8px; right: 8px; }
@@ -757,6 +774,10 @@ button.pvp-chip { cursor: pointer; }
   .pause-panel .pvp-invite { margin: 0; padding: 4px 10px; }
   .pause-panel .pvp-invite b { font-size: 1.3em; }
 }
+.pause-panel .menu-buttons { min-width: 0; }
+.pause-rescue { display: flex; flex-direction: column; gap: 4px; grid-column: 1 / -1; min-width: 0; }
+.pause-panel .pause-rescue .btn { width: 100%; min-height: 44px; }
+.pause-rescue small { text-align: center; overflow-wrap: anywhere; }
 /* the stitched edge is drawn by an absolutely positioned ::before that would scroll away with the content in scrolling panels: use an inset outline instead */
 .form-panel::before, .worlds-panel::before, .settings-panel::before, .howto-panel::before, .credits-panel::before,
 .pause-panel::before, .controls-panel::before, .gear-panel::before, .scoreboard::before { display: none; }
@@ -789,6 +810,7 @@ button.pvp-chip { cursor: pointer; }
   .touch-ui .meter-bar { width: 66px; }
   .touch-ui .pvp-chip { font-size: 10px; padding: 1px 6px; }
   .touch-ui .pvp-chip.code small { display: none; }
+  .touch-ui .pvp-chip.code .room-label { display: inline; }
   .touch-ui .pvp-top { gap: 4px; top: max(50px, calc(var(--safe-t) + 44px)); }
   .touch-ui .kill-feed { top: max(80px, calc(var(--safe-t) + 74px)); }
 }

@@ -302,9 +302,10 @@ export function buildCreature(kind: CreatureKind): Rig {
       }
       return { root, body, head, legs, arms: [], extra, height: 0.7 };
     }
-    case 'gloomstalker': {
+    case 'gloomstalker':
+    case 'zombie': {
       // tall shambling husk: dark mossy body, long arms, glowing eyes
-      const dark = '#2f3a2c', moss = '#4f6a3a', rag = '#3a2f44';
+      const dark = kind === 'zombie' ? '#66844a' : '#2f3a2c', moss = kind === 'zombie' ? '#8da764' : '#4f6a3a', rag = kind === 'zombie' ? '#426b83' : '#3a2f44';
       const legs: THREE.Object3D[] = [];
       for (const sx of [-1, 1]) {
         const hip = pivot(root, sx * 0.12, 0.8, 0);
@@ -326,11 +327,34 @@ export function buildCreature(kind: CreatureKind): Rig {
         arms.push(sh);
       }
       const head = pivot(body, 0, 0.62, 0);
-      part(head, 0.38, 0.38, 0.36, '#3a4a33', 0, 0.18, 0);
+      part(head, 0.38, 0.38, 0.36, kind === 'zombie' ? dark : '#3a4a33', 0, 0.18, 0);
       part(head, 0.42, 0.1, 0.4, moss, 0, 0.36, 0);
       eyes(head, 0, 0.2, 0.185, 0.1, 0.08, '#000', '#9cff7a');
       part(head, 0.14, 0.03, 0.02, '#111', 0, 0.06, 0.185);
       return { root, body, head, legs, arms, extra, height: 1.75 };
+    }
+    case 'skeleton': {
+      const bone = '#e3dbc8', joint = '#b3a995';
+      const body = pivot(root, 0, 0.76, 0);
+      part(body, 0.09, 0.6, 0.1, joint, 0, 0.29, 0);
+      part(body, 0.32, 0.13, 0.17, bone, 0, 0.04, 0);
+      for (let i = 0; i < 4; i++) part(body, 0.38 - i * 0.025, 0.055, 0.19, bone, 0, 0.51 - i * 0.1, 0);
+      const legs: THREE.Object3D[] = [], arms: THREE.Object3D[] = [];
+      for (const sx of [-1, 1]) {
+        const leg = pivot(root, sx * 0.11, 0.76, 0);
+        part(leg, 0.085, 0.7, 0.09, bone, 0, -0.35, 0);
+        part(leg, 0.11, 0.1, 0.2, bone, 0, -0.7, 0.04);
+        legs.push(leg);
+        const arm = pivot(body, sx * 0.25, 0.57, 0);
+        part(arm, 0.075, 0.64, 0.085, bone, 0, -0.32, 0);
+        part(arm, 0.1, 0.12, 0.1, bone, 0, -0.64, 0);
+        arms.push(arm);
+      }
+      const head = pivot(body, 0, 0.62, 0);
+      part(head, 0.34, 0.3, 0.3, bone, 0, 0.15, 0);
+      eyes(head, 0, 0.19, 0.155, 0.085, 0.095, '#272333', '#d76b58');
+      part(head, 0.2, 0.07, 0.02, '#665e54', 0, 0.055, 0.16);
+      return { root, body, head, legs, arms, extra, height: 1.7 };
     }
     case 'duskfang': {
       // lean wolf-like pack hunter
@@ -484,7 +508,9 @@ export function animateCreature(kind: CreatureKind, rig: Rig, s: AnimState): voi
       legs.forEach((l, i) => (l.rotation.y = Math.sin(t * 16 * Math.max(0.3, s.moving) + i * 1.7) * 0.5 * Math.max(0.15, s.moving)));
       break;
     }
-    case 'gloomstalker': {
+    case 'gloomstalker':
+    case 'zombie':
+    case 'skeleton': {
       const sway = Math.sin(t * (4 + s.moving * 3)) * s.moving;
       legs[0].rotation.x = sway * 0.7;
       legs[1].rotation.x = -sway * 0.7;
@@ -522,7 +548,13 @@ export function animateExplorer(rig: Rig, s: AnimState & { swing: number; swingK
   const [legL, legR] = rig.legs;
   const [armL, armR] = rig.arms;
   const stride = Math.sin(t * (7 + s.moving * 5)) * s.moving;
-  if (s.swimming) {
+  if (s.sitting) {
+    legL.rotation.x = legR.rotation.x = -Math.PI / 2;
+    armL.rotation.x = armR.rotation.x = -0.3;
+    armL.rotation.z = -0.06;
+    armR.rotation.z = 0.06;
+    rig.body.rotation.x = 0;
+  } else if (s.swimming) {
     legL.rotation.x = Math.sin(t * 6) * 0.5;
     legR.rotation.x = -Math.sin(t * 6) * 0.5;
     armL.rotation.x = -2.6 + Math.sin(t * 3) * 0.6;
