@@ -198,12 +198,15 @@ class MemoryStore implements Store {
 }
 
 let storePromise: Promise<Store> | null = null;
+let platformStore: Store | null = null;
+export function setPlatformStore(store: Store): void { platformStore = store; }
 let openDb: IDBPDatabase<WildDB> | null = null;
 
 export const DB_NAME = 'wildblocks';
 export const DB_VERSION = 2;
 
 export function getStore(): Promise<Store> {
+  if (platformStore) return Promise.resolve(platformStore);
   if (!storePromise) {
     storePromise = (async () => {
       try {

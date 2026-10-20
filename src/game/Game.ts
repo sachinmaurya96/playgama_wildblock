@@ -20,6 +20,7 @@ import { AssetManager } from './core/AssetManager';
 import { LOAD_TIMEOUT_SECONDS } from './deathmatch/DeathmatchRules';
 import { audio } from './core/audio';
 import type { AudioManager, Mood } from './core/AudioManager';
+import { lifecycle } from '../platform/lifecycle';
 import { EventBus } from './core/EventBus';
 import { GameClock } from './core/GameClock';
 import { InputManager } from './core/InputManager';
@@ -71,7 +72,7 @@ export interface GameInit {
   mods: Map<number, [number, number][]>;
 }
 
-type SaveReason = 'auto' | 'pause' | 'quit' | 'sleep' | 'created' | 'hidden' | 'quiet';
+type SaveReason = 'auto' | 'pause' | 'quit' | 'sleep' | 'created' | 'hidden' | 'quiet' | 'death' | 'respawn';
 
 /**
  * Engine root. Owns the voxel world, systems and rendering objects; React only
@@ -249,7 +250,7 @@ export class Game {
       if (this.build) useBuildStore.getState().set({ cursorMode: free && !this.build.usesFreeCamera() });
     };
     // Handy for debugging / automated play-tests: window.wildblocks.game
-    (window as unknown as { wildblocks?: unknown }).wildblocks = {
+    if (import.meta.env.DEV) (window as unknown as { wildblocks?: unknown }).wildblocks = {
       game: this,
       stores: { inventory: useInventoryStore, world: useWorldStore, game: useGameStore, player: usePlayerStore, settings: useSettingsStore, build: useBuildStore },
       blockKeys: BLOCK_DEFS.map((d) => d.key),
@@ -304,6 +305,7 @@ export class Game {
       this.player.yaw = p.yaw;
       this.player.pitch = p.pitch;
       this.player.vitality = p.vitality;
+      this.player.dead = p.vitality <= 0;
       this.player.energy = p.energy;
       this.player.buffs = p.buffs ?? [];
       this.clock.playTime = this.meta.playTime;
@@ -451,7 +453,7 @@ export class Game {
         return;
       }
       const gs = useGameStore.getState();
-      if (gs.screen === 'playing' && gs.overlay === null) this.openOverlay('pause');
+      if (gs.screen === 'playing' && gs.overlay === null && !this.player.dead) this.openOverlay('pause');
     };
   }
 
@@ -611,7 +613,7 @@ export class Game {
   /** Desktop shortcut: release without pausing, or recapture from the same key gesture. */
   toggleCursor(): boolean {
     const gs = useGameStore.getState();
-    if (!this.ready || this.disposed || this.input.touch.active || gs.screen !== 'playing' || gs.overlay !== null) return false;
+    if (!this.ready || this.disposed || this.player.dead || this.input.touch.active || gs.screen !== 'playing' || gs.overlay !== null) return false;
     if (!this.input.cursorFree) {
       this.input.setCursorFree(true);
       this.releasePointer();
@@ -627,12 +629,14 @@ export class Game {
   }
 
   openOverlay(o: Overlay, station: StationKind | null = null): void {
+    if (this.player.dead && useGameStore.getState().overlay === 'death' && o !== 'death') return;
     this.releasePointer();
     useGameStore.getState().setOverlay(o, station);
     if (o === 'pause') void this.saveNow('pause');
   }
 
   closeOverlay(): void {
+    if (this.player.dead && useGameStore.getState().overlay === 'death') return;
     const inv = useInventoryStore.getState();
     const c = inv.closeContainer();
     if (c) {
@@ -660,7 +664,7 @@ export class Game {
     if (gs.screen !== 'playing') return;
     const inp = this.input;
     const o = gs.overlay;
-    if (!this.build && inp.cursorFree && o === null && inp.keyPressed('Escape') && !(this.pvp && usePvpStore.getState().gearOpen) && !(this.dm && useDeathmatchStore.getState().optionsOpen)) {
+    if (!this.build && o === null && inp.keyPressed('Escape') && !(this.pvp && usePvpStore.getState().gearOpen) && !(this.dm && useDeathmatchStore.getState().optionsOpen)) {
       this.openOverlay('pause');
       return;
     }
@@ -742,15 +746,33 @@ export class Game {
 
   /** Automated play-tests freeze the loop and step it manually (see T.step in the harness). */
   debugFreeze = false;
+  private wasPlatformPaused = false;
+  private delayedActions = new Set<() => void>();
+  defer(action: () => void, milliseconds: number): void {
+    const cancel = lifecycle.delay(() => {
+      this.delayedActions.delete(cancel);
+      if (!this.disposed) action();
+    }, milliseconds);
+    this.delayedActions.add(cancel);
+  }
 
   update(rawDt: number, force = false): void {
     if (this.disposed) return;
     if (this.debugFreeze && !force) return;
+    if (lifecycle.interrupted) {
+      this.wasPlatformPaused = true;
+      this.input.clearHeld(); this.input.endFrame();
+      return;
+    }
+    // Interrupted input was already cleared while paused. Preserve fresh events
+    // received after the host resumes, even if they arrive before this frame.
+    if (this.wasPlatformPaused) { rawDt = 0; this.wasPlatformPaused = false; }
+    this.handleKeys();
+    if (lifecycle.has('user')) { this.input.clearHeld(); this.input.endFrame(); return; }
     const dt = Math.min(rawDt, 0.1);
     this.time += dt;
     const gs = useGameStore.getState();
     const simulate = this.ready && gs.screen === 'playing' && gs.overlay === null;
-    this.handleKeys();
 
     if (simulate) {
       if (this.build && useBuildStore.getState().timeLocked) this.clock.playTime += dt;
@@ -1196,19 +1218,17 @@ export class Game {
     useWorldStore.setState({ deathMarker: { x: Math.floor(p.x), z: Math.floor(p.z) } });
     useGameStore.setState({ death: { cause, lost } });
     this.bus.emit('playerDied', { cause });
-    const atHome = !!useWorldStore.getState().home;
-    this.respawn(atHome ? 'home' : 'camp');
-    useGameStore.getState().toast(
-      `Overcome by ${cause}. Respawned at ${atHome ? 'home' : 'starting camp'}. ${lost > 0 ? `${lost} items dropped — follow the lost-satchel marker to recover them.` : 'No items dropped.'}`,
-      lost > 0 ? 'warn' : 'info', '🍂',
-    );
+    this.player.body.vel.set(0, 0, 0);
+    this.player.syncHud();
+    this.openOverlay('death');
+    void this.saveNow('death');
   }
 
   /** Pause-menu rescue for a living player. Keeps inventory, health and progress. */
   async quickRespawn(): Promise<string | null> {
     if (this.disposed || !this.ready) return 'The world is not ready yet.';
     if (this.dm) return 'Quick Respawn is unavailable in Deathmatch.';
-    if (this.player.dead) return 'You are already respawning.';
+    if (this.player.dead) return 'Choose Respawn on the death screen when you are ready.';
     if (this.build) {
       // Existing navigation checks furniture as well as terrain and moves both cameras.
       const why = await this.build.navigation.teleportTo(0, 6);
@@ -1236,6 +1256,7 @@ export class Game {
     const ws = useWorldStore.getState();
     const target = where === 'home' && ws.home ? ws.home : where === 'safe' ? null : ws.camp;
     const p = this.player;
+    const wasDead = p.dead;
     if (target) p.teleport(target.x + 0.5, target.y + 0.1, target.z + 0.5);
     else {
       const x = Math.floor(p.position.x), z = Math.floor(p.position.z);
@@ -1254,6 +1275,7 @@ export class Game {
       useGameStore.setState({ death: null });
       this.closeOverlay();
     }
+    if (wasDead) void this.saveNow('respawn');
   }
 
   // ---------------------------------------------------------------- saving
@@ -1293,7 +1315,7 @@ export class Game {
     if (this.savePromise) {
       const saved = await this.savePromise;
       if (reason === 'auto' || reason === 'quiet') return saved;
-      // Quit/pause/sharing must also persist edits made during the older save.
+      // Explicit checkpoints must also persist changes made during the older save.
       return this.saveNow(reason);
     }
     const pending = this.persistSnapshot(reason);
@@ -1319,7 +1341,7 @@ export class Game {
         lastSaved: Date.now(),
         ...(this.world.dirtyMods.size === 0 && this.build.objects.revision === objectRevision ? { dirty: false } : {}),
       });
-      if (reason !== 'created' && reason !== 'hidden' && reason !== 'quiet') useGameStore.getState().toast(this.build ? 'Project saved' : 'World saved', 'save', '💾');
+      if (!['created', 'hidden', 'quiet', 'death', 'respawn'].includes(reason)) useGameStore.getState().toast(this.build ? 'Project saved' : 'World saved', 'save', '💾');
       return true;
     } catch (e) {
       this.pendingMaps.unshift(...maps);
@@ -1404,6 +1426,8 @@ export class Game {
   }
 
   dispose(): void {
+    for (const cancel of this.delayedActions) cancel();
+    this.delayedActions.clear();
     this.disposed = true;
     this.rest.dispose();
     for (const o of this.offs) o();

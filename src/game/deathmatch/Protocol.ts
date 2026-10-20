@@ -11,7 +11,7 @@ import type { LoadoutSnapshot } from './WeaponSystem';
  * from a previous match can never score. Times from the host are seconds on
  * the host's monotonic clock — clients convert with their measured offset.
  */
-export const DM_PROTOCOL = 1;
+export const DM_PROTOCOL = 2;
 
 type V3 = [number, number, number];
 
@@ -23,6 +23,7 @@ export type ClientMsg =
   | { t: 'start' }
   | { t: 'again' }
   | { t: 'ready'; r: number }
+  | { t: 'respawn'; r: number }
   | { t: 'ping'; c: number }
   /** Movement: position, look, flags (1 crouch, 2 grounded, 4 aiming, 8 reloading, 16 sprint, 32 healing), speed. */
   | { t: 'st'; r: number; p: V3; yw: number; pt: number; w: WeaponId; f: number; m: number }
@@ -54,6 +55,7 @@ export type ServerMsg =
   | { t: 'dmg'; r: number; v: string; a: string; n: number; hp: number; head: boolean; w: string; from: V3 }
   | { t: 'kill'; r: number; v: string; k: string | null; w: string; head: boolean; red: number; blue: number; respawnAt: number }
   | { t: 'spawn'; r: number; id: string; p: V3; yw: number; protUntil: number }
+  | { t: 'respawnWait'; r: number; until: number }
   | { t: 'inv'; r: number; inv: LoadoutSnapshot; reload: number }
   | { t: 'hp'; r: number; id: string; hp: number }
   | { t: 'heal'; r: number; size: 'small' | 'large'; until: number; ok: boolean; reason?: string }
@@ -87,6 +89,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
     case 'start': return { t: 'start' };
     case 'again': return { t: 'again' };
     case 'ready': return int(r, 0, 1e6) ? { t: 'ready', r } : null;
+    case 'respawn': return int(r, 0, 1e6) ? { t: 'respawn', r } : null;
     case 'ping': return num(m.c, 1e12) ? { t: 'ping', c: m.c } : null;
     case 'st':
       return int(r, 0, 1e6) && v3(m.p) && num(m.yw, 100) && num(m.pt, 4) && isWeapon(m.w) && int(m.f, 0, 255) && num(m.m, 2)

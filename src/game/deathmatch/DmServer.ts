@@ -143,6 +143,7 @@ export class DmServer {
     if (msg.r !== this.room.round) return; // stale: another round
     switch (msg.t) {
       case 'ready': return this.ready(from);
+      case 'respawn': return this.requestRespawn(from);
       case 'st': return this.state(from, msg);
       case 'fire': return this.fire(from, msg);
       case 'melee': return this.melee(from, msg);
@@ -241,8 +242,11 @@ export class DmServer {
     if (!mp) return;
     mp.ready = true;
     if (this.room.phase === 'playing' && !mp.spawned) {
-      // reconnected mid-match: straight back in
-      this.respawn(mp);
+      if (mp.respawnAt > 0) {
+        // Reconnecting must not revive someone who was waiting to respawn.
+        mp.spawned = true;
+        this.io.send(id, { t: 'kill', r: this.room.round, v: id, k: null, w: 'city', head: false, red: this.red, blue: this.blue, respawnAt: mp.respawnAt });
+      } else this.respawn(mp);
       this.sendLoot(id);
       this.io.send(id, { t: 'go', r: this.room.round, startAt: this.startAt, endAt: this.endAt });
       return;
@@ -336,7 +340,6 @@ export class DmServer {
       for (const mp of this.players.values()) {
         const reloaded = mp.arsenal.update(now);
         if (reloaded) this.sendInv(mp);
-        if (!mp.alive && mp.spawned && mp.respawnAt && now >= mp.respawnAt) this.respawn(mp, true);
         if (mp.heal && now >= mp.heal.endsAt) this.healFinish(mp);
       }
       const l = this.loot!.tick(now);
@@ -533,6 +536,16 @@ export class DmServer {
     v.arsenal.reset();
     if (added.length) this.io.send(null, { t: 'loot', r: this.room.round, items: added.map((i) => [i.lid, i.kind, i.x, i.y, i.z]), reset: false });
     this.io.send(null, { t: 'kill', r: this.room.round, v: v.id, k: killer?.id ?? null, w, head, red: this.red, blue: this.blue, respawnAt: v.respawnAt });
+  }
+
+  private requestRespawn(id: string): void {
+    const mp = this.players.get(id);
+    if (this.room.phase !== 'playing' || !mp || mp.alive || !mp.ready || !mp.spawned || mp.respawnAt <= 0) return;
+    if (this.io.now() < mp.respawnAt) {
+      this.io.send(id, { t: 'respawnWait', r: this.room.round, until: mp.respawnAt });
+      return;
+    }
+    this.respawn(mp, true);
   }
 
   /** `afterDeath`: comes back with a random gun (one loaded magazine + one spare) so nobody respawns sword-only. */

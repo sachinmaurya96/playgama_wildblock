@@ -88,7 +88,7 @@ interface PvpState {
   timeLeft: number | null;
   phase: 'playing' | 'ended';
   winner: string | null;
-  /** Retained for HUD compatibility; immediate shared-world respawns keep this at zero. */
+  /** Shared-world respawns wait for the player and have no countdown. */
   respawnIn: number;
   killedBy: string | null;
   scoreboardOpen: boolean;

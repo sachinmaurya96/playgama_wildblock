@@ -3,6 +3,7 @@ import { itemDef, SET_BONUS_DEFENSE, type BuffId } from '../../data/items';
 import { useInventoryStore } from '../../stores/inventoryStore';
 import { usePlayerStore, type Buff } from '../../stores/playerStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useGameStore } from '../../stores/gameStore';
 import { B } from '../world/BlockRegistry';
 import { VOID_Y } from '../world/constants';
 import type { Game } from '../Game';
@@ -191,6 +192,7 @@ export class Player {
   }
 
   heal(v: number, e: number): void {
+    if (this.dead) return;
     this.vitality = Math.min(this.maxVitality, this.vitality + v);
     this.energy = Math.min(100, this.energy + e);
     this.syncTimer = 0;
@@ -323,17 +325,24 @@ export class Player {
         this.shake = Math.min(1, this.shake + Math.min(0.5, fall * 0.05));
       }
     }
+    if (this.dead) return;
     if (b.grounded || this.inWater) this.fallPeak = b.pos.y;
     this.wasGrounded = b.grounded;
 
-    // ---- void rescue
+    // ---- void recovery is a player choice, never an automatic teleport
     if (b.pos.y < VOID_Y) {
-      if (this.creative) this.teleport(0.5, this.game.world.standableY(0, 0) + 1.2, 0.5);
-      else {
-        this.hurt(10, 'void');
-        // A lethal hit may already have respawned us at home/camp.
-        if (b.pos.y < VOID_Y) this.game.respawn('safe');
+      if (this.game.dm) {
+        // The referee decides elimination; its death screen offers manual respawn.
+        this.hurt(1000, 'void');
+      } else {
+        if (!this.creative) this.hurt(10, 'void');
+        if (!this.dead) {
+          b.vel.set(0, 0, 0);
+          this.game.openOverlay('pause');
+          useGameStore.getState().toast('Outside the world. Choose Quick Respawn when you want to return to solid ground.', 'warn', '🆘');
+        }
       }
+      return;
     }
 
     // ---- footsteps
@@ -357,6 +366,7 @@ export class Player {
   }
 
   private updateVitals(dt: number, hs: number) {
+    if (this.dead) return;
     // energy: gentle drain, faster when sprinting/working, never lethal
     let drain = 0.035;
     if (this.sprinting && hs > 1) drain += 0.6;

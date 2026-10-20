@@ -1,0 +1,7 @@
+{
+  "advertisement": {
+    "minimumDelayBetweenInterstitial": 90,
+    "interstitial": { "placements": [{ "id": "return_to_menu" }] },
+    "rewarded": { "placements": [{ "id": "starlight_scarf" }] }
+  }
+}

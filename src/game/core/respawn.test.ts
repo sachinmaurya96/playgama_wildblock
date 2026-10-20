@@ -39,7 +39,9 @@ function setup(difficulty: Difficulty = 'explorer', home = true) {
       gyro: { configure: vi.fn(), take: () => ({ yaw: 0, pitch: 0 }) }, cursorFree: false,
       lookX: 0, lookY: 0, moveVector: () => new THREE.Vector2(), isDown: () => false, wasPressed: () => false,
       touch: { active: false, jump: false, crouch: false, sprint: false }, requestLock: vi.fn(),
+      clearHeld: vi.fn(),
     },
+    saveNow: vi.fn().mockResolvedValue(true),
   }) as Game;
   Object.assign(game, { player: new Player(game) });
   game.player.teleport(4.5, 11, 6.5);
@@ -60,11 +62,11 @@ function inventory() {
   return snap;
 }
 
-describe('immediate survival respawn', () => {
+describe('player-chosen survival respawn', () => {
   it.each([
     ['peaceful', true], ['peaceful', false], ['explorer', true], ['explorer', false],
     ['adventurer', true], ['adventurer', false],
-  ] as const)('%s with home=%s revives immediately and keeps difficulty-specific losses', (difficulty, home) => {
+  ] as const)('%s with home=%s waits for the player and keeps difficulty-specific losses', (difficulty, home) => {
     const { game } = setup(difficulty, home);
     const before = inventory();
     const died = vi.fn(() => {
@@ -74,6 +76,21 @@ describe('immediate survival respawn', () => {
     game.bus.on('playerDied', died);
     game.player.maxVitality = 120; game.player.energy = 20;
     game.player.hurt(1000, 'fall');
+    expect(game.player.dead).toBe(true);
+    expect(game.player.vitality).toBe(0);
+    expect(game.player.position.toArray()).toEqual([4.5, 11, 6.5]);
+    expect(useGameStore.getState()).toMatchObject({ overlay: 'death', death: { cause: 'fall' } });
+    game.player.update(60, true);
+    expect(game.player.dead).toBe(true);
+    game.closeOverlay();
+    expect(useGameStore.getState().overlay).toBe('death');
+    game.openOverlay('pause');
+    expect(useGameStore.getState().overlay).toBe('death');
+    game.player.heal(100, 100);
+    expect(game.player.vitality).toBe(0);
+    expect(game.player.energy).toBe(20);
+    expect(game.player.hurt(1000, 'fall')).toBe(0);
+    game.respawn(home ? 'home' : 'camp');
     expect(game.player.dead).toBe(false);
     expect(game.player.vitality).toBe(90);
     expect(game.player.energy).toBe(60);
@@ -104,7 +121,9 @@ describe('immediate survival respawn', () => {
     expect(game.player.hurt(1000, 'fall')).toBe(0);
     expect(died).toHaveBeenCalledTimes(1);
     expect(game.drops.spawn).toHaveBeenCalledTimes(dropCount);
-    expect(useGameStore.getState().toasts.at(-1)?.text).toContain(`Respawned at ${home ? 'home' : 'starting camp'}`);
+    expect(game.saveNow).toHaveBeenCalledTimes(2);
+    expect(game.saveNow).toHaveBeenNthCalledWith(1, 'death');
+    expect(game.saveNow).toHaveBeenNthCalledWith(2, 'respawn');
   });
 
   it('freezes immediately at an unloaded destination until terrain is ready', () => {
@@ -112,6 +131,8 @@ describe('immediate survival respawn', () => {
     useWorldStore.setState({ home: { x: 80, y: 30, z: 80 } });
     ready.mockReturnValue(false);
     game.player.hurt(1000, 'fall');
+    expect(game.player.dead).toBe(true);
+    game.respawn('home');
     expect(game.player.dead).toBe(false); expect(game.player.waitingForGround).toBe(true);
     const spawn = game.player.position.clone();
     game.player.update(0.1, true);
@@ -126,29 +147,32 @@ describe('immediate survival respawn', () => {
     const { game } = setup();
     game.world.set(8, 11, 8, B.STONE); game.world.set(8, 12, 8, B.STONE);
     game.player.hurt(1000, 'fall');
+    game.respawn('home');
     expect(game.player.dead).toBe(false);
     expect(game.player.position.y).toBeGreaterThan(12);
     expect(game.world.isSolid(8, Math.floor(game.player.position.y), 8)).toBe(false);
   });
 
-  it('keeps the home spawn when void damage is lethal instead of running a second rescue', () => {
+  it('keeps lethal void falls on the death screen until the player chooses a spawn', () => {
     const { game } = setup();
     game.player.teleport(4.5, VOID_Y - 5, 6.5); game.player.vitality = 1;
     const respawn = vi.spyOn(game, 'respawn');
     game.player.update(0.01, true);
-    expect(respawn).toHaveBeenCalledExactlyOnceWith('home');
-    expect(game.player.position.toArray()).toEqual([8.5, 11.1, 8.5]);
-    expect(game.player.dead).toBe(false);
+    expect(respawn).not.toHaveBeenCalled();
+    expect(game.player.position.y).toBeLessThan(VOID_Y);
+    expect(game.player.dead).toBe(true);
+    expect(useGameStore.getState().overlay).toBe('death');
   });
 
-  it('still rescues nonlethal void falls without dropping items or resetting health', () => {
+  it('offers manual recovery for nonlethal void falls without teleporting or dropping items', () => {
     const { game } = setup(); inventory();
     game.player.teleport(4.5, VOID_Y - 5, 6.5);
     const respawn = vi.spyOn(game, 'respawn');
     game.player.update(0.01, true);
-    expect(respawn).toHaveBeenCalledExactlyOnceWith('safe');
+    expect(respawn).not.toHaveBeenCalled();
     expect(game.player.vitality).toBe(90);
-    expect(game.player.position.x).toBe(4.5); expect(game.player.position.y).toBeGreaterThan(10);
+    expect(game.player.position.x).toBe(4.5); expect(game.player.position.y).toBeLessThan(VOID_Y);
+    expect(useGameStore.getState().overlay).toBe('pause');
     expect(game.drops.spawn).not.toHaveBeenCalled();
     expect(useWorldStore.getState().deathMarker).toBeNull();
   });
@@ -159,6 +183,11 @@ describe('immediate survival respawn', () => {
     expect(game.player.hurt(1000, 'fall')).toBe(0);
     expect(game.player.position).toEqual(spawn); expect(game.player.dead).toBe(false);
     expect(game.drops.spawn).not.toHaveBeenCalled();
+    game.player.teleport(4.5, VOID_Y - 5, 6.5);
+    game.player.update(0.01, true);
+    expect(game.player.dead).toBe(false);
+    expect(game.player.position.y).toBeLessThan(VOID_Y);
+    expect(useGameStore.getState().overlay).toBe('pause');
   });
 
   it('leaves Deathmatch health and death handling to its referee', () => {

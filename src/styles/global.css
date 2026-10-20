@@ -134,6 +134,10 @@ select {
   inset: 0;
 }
 
+.platform-loading { max-width: 480px; padding: 28px; }
+.save-error { position: fixed; z-index: 110; bottom: max(12px, var(--safe-b)); left: max(12px, var(--safe-l)); max-width: min(420px, 90vw); padding: 12px; }
+.save-error p { margin: 0 0 8px; }
+
 .canvas-wrap {
   position: absolute;
   inset: 0;

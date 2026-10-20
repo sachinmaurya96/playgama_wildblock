@@ -38,12 +38,12 @@ afterEach(() => {
 });
 
 describe('game save coordination', () => {
-  it('waits for an autosave and takes a fresh snapshot before quitting', async () => {
+  it.each(['quit', 'death', 'respawn'] as const)('waits for an autosave and takes a fresh snapshot for %s', async (reason) => {
     const firstWrite = deferred<void>();
     const quitWrite = deferred<void>();
     vi.mocked(writeSave).mockReturnValueOnce(firstWrite.promise).mockReturnValueOnce(quitWrite.promise);
     const auto = game.saveNow('auto');
-    const quit = game.saveNow('quit');
+    const quit = game.saveNow(reason);
     let finished = false;
     void quit.then(() => { finished = true; });
     expect(writeSave).toHaveBeenCalledTimes(1);

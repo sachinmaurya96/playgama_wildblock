@@ -1,4 +1,5 @@
 import { DmServer } from '../game/deathmatch/DmServer';
+import { preferences } from '../platform/storage';
 import { DM_PROTOCOL, parseServerMsg, type ClientMsg, type ServerMsg } from '../game/deathmatch/Protocol';
 import { useDeathmatchStore } from '../stores/deathmatchStore';
 import { useGameStore } from '../stores/gameStore';
@@ -206,7 +207,7 @@ export class DmNet {
         this.selfId = msg.you;
         this.token = msg.token;
         try {
-          sessionStorage.setItem(`wb-dm-token-${this.code}`, msg.token);
+          preferences.setItem(`wb-dm-token-${this.code}`, msg.token);
         } catch {
           /* ignore */
         }
@@ -375,7 +376,7 @@ export async function joinDeathmatch(opts: { code: string; name: string; online:
   useDeathmatchStore.getState().set({ code, online: opts.online, isHost: false });
   let token: string | undefined;
   try {
-    token = sessionStorage.getItem(`wb-dm-token-${code}`) ?? undefined;
+    token = preferences.getItem(`wb-dm-token-${code}`) ?? undefined;
   } catch {
     /* ignore */
   }

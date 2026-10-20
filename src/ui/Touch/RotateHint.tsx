@@ -19,14 +19,10 @@ export function RotateHint() {
     window.addEventListener('resize', on);
     window.addEventListener('orientationchange', on);
     screen.orientation?.addEventListener?.('change', on);
-    // lock to landscape on the first taps (needs a user gesture)
-    const tap = () => void requestLandscape().then(on);
-    window.addEventListener('pointerup', tap);
     return () => {
       window.removeEventListener('resize', on);
       window.removeEventListener('orientationchange', on);
       screen.orientation?.removeEventListener?.('change', on);
-      window.removeEventListener('pointerup', tap);
     };
   }, [touch]);
 

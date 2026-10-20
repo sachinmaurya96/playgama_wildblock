@@ -1,3 +1,4 @@
+import { preferences } from '../../platform/storage';
 import { useEffect, useState } from 'react';
 import { launchPvp } from '../../app/launch';
 import { audio } from '../../game/core/audio';
@@ -15,7 +16,7 @@ const KITS: { id: PvpKit; name: string; text: string }[] = [
 
 function load<T>(key: string, fallback: T): T {
   try {
-    const v = localStorage.getItem(key);
+    const v = preferences.getItem(key);
     return v ? (JSON.parse(v) as T) : fallback;
   } catch {
     return fallback;
@@ -23,7 +24,7 @@ function load<T>(key: string, fallback: T): T {
 }
 function save(key: string, v: unknown) {
   try {
-    localStorage.setItem(key, JSON.stringify(v));
+    preferences.setItem(key, JSON.stringify(v));
   } catch {
     /* private mode */
   }

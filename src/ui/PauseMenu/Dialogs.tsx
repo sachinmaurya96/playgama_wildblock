@@ -1,18 +1,33 @@
+import { useState } from 'react';
 import { gameRegistry } from '../../game/registry';
 import { useGameStore } from '../../stores/gameStore';
 import { useWorldStore } from '../../stores/worldStore';
+import { usePvpStore } from '../../stores/pvpStore';
 
 export function DeathScreen() {
   const death = useGameStore((s) => s.death);
   const home = useWorldStore((s) => s.home);
+  const pvp = usePvpStore((s) => s.active);
+  const by = usePvpStore((s) => s.killedBy);
+  const [busy, setBusy] = useState(false);
+  const quit = async () => {
+    setBusy(true);
+    const saved = await gameRegistry.current?.saveNow('quit');
+    if (saved === false) { setBusy(false); return; }
+    useGameStore.getState().setScreen('menu');
+  };
   return (
-    <div className="modal-backdrop death-backdrop">
+    <div className="modal-backdrop death-backdrop" role="dialog" aria-modal="true" aria-labelledby="death-title">
       <div className="panel death-panel">
-        <h2 className="panel-title">🍂 You were overcome by the wilds.</h2>
-        <p>{death?.cause ? `Cause: ${death.cause}.` : ''} {death && death.lost > 0 ? `You dropped ${death.lost} gathered items — your satchel is marked 🍂 on the map and compass.` : 'Nothing was lost.'}</p>
+        <h2 id="death-title" className="panel-title">{pvp ? 'You were defeated.' : '🍂 You were overcome by the wilds.'}</h2>
+        {pvp ? <p>{by ? `Taken down by ${by}.` : 'Your player is defeated.'}</p> : <p>{death?.cause ? `Cause: ${death.cause}.` : ''} {death ? death.lost > 0 ? `You dropped ${death.lost} items — your satchel is marked 🍂 on the map and compass.` : 'Nothing was lost.' : 'Your saved player is still defeated.'}</p>}
+        <p>Respawn when you are ready.</p>
         <div className="menu-buttons">
-          {home && <button className="btn primary" onClick={() => gameRegistry.current?.respawn('home')}>Respawn at home</button>}
-          <button className={`btn ${home ? '' : 'primary'}`} onClick={() => gameRegistry.current?.respawn('camp')}>Respawn at starting camp</button>
+          {pvp ? <button className="btn primary" disabled={busy} onClick={() => gameRegistry.current?.pvp?.requestRespawn()}>Respawn</button> : <>
+            {home && <button className="btn primary" disabled={busy} onClick={() => gameRegistry.current?.respawn('home')}>Respawn at home</button>}
+            <button className={`btn ${home ? '' : 'primary'}`} disabled={busy} onClick={() => gameRegistry.current?.respawn('camp')}>Respawn at starting camp</button>
+          </>}
+          <button className="btn" disabled={busy} onClick={() => void quit()}>{busy ? 'Saving…' : pvp ? 'Leave match' : 'Save & Quit to Menu'}</button>
         </div>
       </div>
     </div>

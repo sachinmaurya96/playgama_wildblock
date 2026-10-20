@@ -1,5 +1,6 @@
 import { useSettingsStore, type Action } from '../../stores/settingsStore';
 import { Gyro } from './Gyro';
+import { lifecycle } from '../../platform/lifecycle';
 
 /**
  * Keyboard / mouse / pointer-lock / touch input. Engine systems poll this each
@@ -74,6 +75,7 @@ export class InputManager {
       this.listeners.push([t, type, fn as EventListener, opts]);
     };
     on(window, 'keydown', (e: KeyboardEvent) => {
+      if (lifecycle.interrupted) return;
       this.ctrl = e.ctrlKey || e.metaKey;
       this.shift = e.shiftKey;
       this.alt = e.altKey;
@@ -106,6 +108,7 @@ export class InputManager {
       this.mouseLeft = this.mouseRight = false;
     });
     on(canvas, 'mousedown', (e: MouseEvent) => {
+      if (lifecycle.paused) return;
       if (this.cursorFree) return;
       if (!this.pointerLocked && !this.allowUnlocked) return;
       this.updateNdc(e);
@@ -128,6 +131,7 @@ export class InputManager {
     });
     on(canvas, 'contextmenu', (e: Event) => e.preventDefault());
     on(window, 'mousemove', (e: MouseEvent) => {
+      if (lifecycle.paused) return;
       if (this.cursorFree) return;
       if (!this.pointerLocked) {
         if (!this.allowUnlocked) return;
@@ -148,6 +152,7 @@ export class InputManager {
       this.lookY += e.movementY;
     });
     on(canvas, 'wheel', (e: WheelEvent) => {
+      if (lifecycle.paused) return;
       if (this.cursorFree) return;
       if (!this.pointerLocked && !this.allowUnlocked) return;
       this.wheel += Math.sign(e.deltaY);
@@ -280,6 +285,8 @@ export class InputManager {
   clearHeld(): void {
     this.down.clear();
     this.mouseLeft = this.mouseRight = this.mouseMiddle = false;
+    this.touch.moveX = this.touch.moveY = 0;
+    this.touch.jump = this.touch.crouch = this.touch.sprint = this.touch.breakHeld = this.touch.placeHeld = false;
   }
 }
 

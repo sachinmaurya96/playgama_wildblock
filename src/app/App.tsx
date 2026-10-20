@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import { audio } from '../game/core/audio';
 import { gameRegistry } from '../game/registry';
 import { platform } from '../platform';
@@ -20,6 +20,8 @@ import { pvpNet } from '../net/pvpNet';
 import { dmInviteFromUrl, dmNet } from '../net/deathmatchNet';
 import { DeathmatchScreen } from '../ui/Deathmatch/DeathmatchScreen';
 import { voiceService } from '../net/voice';
+import { lifecycle } from '../platform/lifecycle';
+import { getAds } from '../platform/playgama';
 
 // The 3D engine (three.js + R3F) loads only when a world starts: menus appear instantly.
 const GameView = lazy(() => import('./GameView'));
@@ -28,6 +30,7 @@ export function App() {
   const screen = useGameStore((s) => s.screen);
   const fatal = useGameStore((s) => s.fatalError);
   const uiScale = useSettingsStore((s) => s.accessibility.uiScale);
+  const adOpportunity = useRef(false);
 
   useEffect(() => {
     document.documentElement.style.setProperty('--ui-scale', String(uiScale));
@@ -37,6 +40,7 @@ export function App() {
     if (useGameStore.getState().screen === 'boot') useGameStore.getState().setScreen(dmInviteFromUrl() ? 'deathmatch' : inviteCodeFromUrl() ? 'pvp' : 'menu');
     // unlock audio on the first interaction anywhere
     const unlock = () => {
+      if (!lifecycle.audioEnabled) return;
       audio.init();
       audio.applyVolumes(useSettingsStore.getState().audio);
     };
@@ -45,26 +49,44 @@ export function App() {
     window.addEventListener('touchend', unlock);
     window.addEventListener('pointerup', unlock);
     window.addEventListener('click', unlock);
-    // host page / tab visibility → pause + save
-    platform.onPauseChange((paused) => {
+    let interrupted = false;
+    const syncLifecycle = () => {
       const g = gameRegistry.current;
-      if (paused) {
-        audio.suspend();
+      audio.setAllowed(lifecycle.audioEnabled);
+      if (!lifecycle.audioEnabled) {
         voiceService.current?.suspendAudio();
-        // PvP keeps running in the background (the match doesn't stop for one player)
-        if (g && !g.pvp && !g.dm && useGameStore.getState().screen === 'playing') {
-          void g.saveNow('hidden');
-          if (useGameStore.getState().overlay === null) g.openOverlay('pause');
-        }
       } else {
-        audio.resume();
         voiceService.current?.resumeAudio();
       }
+      if (lifecycle.interrupted && g && useGameStore.getState().screen === 'playing') {
+        g.releasePointer();
+        g.input.clearHeld();
+        g.input.endFrame();
+        if (!interrupted && !g.pvp && !g.dm) void g.saveNow('hidden');
+      }
+      interrupted = lifecycle.interrupted;
+    };
+    const removeLifecycle = lifecycle.subscribe(syncLifecycle);
+    const syncGame = () => {
+      const gs = useGameStore.getState();
+      lifecycle.set('loading', gs.screen === 'loading');
+      const solo = gs.world?.mode !== 'pvp' && gs.world?.mode !== 'deathmatch' && !gameRegistry.current?.pvp;
+      lifecycle.set('user', solo && gs.screen === 'playing' && ['pause', 'settings', 'death', 'sleep'].includes(gs.overlay ?? ''));
+    };
+    const removeGame = useGameStore.subscribe((s, previous) => {
+      syncGame();
+      // The match/world has ended locally. Never request an ad inside a live match.
+      if (previous.screen === 'playing' && s.screen === 'menu') adOpportunity.current = true;
     });
+    const removeSettings = useSettingsStore.subscribe((s) => {
+      lifecycle.setAudio(lifecycle.platformAudio, s.audio.master > 0);
+      audio.applyVolumes(s.audio);
+    });
+    syncLifecycle(); syncGame();
     const beforeUnload = () => {
       pvpNet.current?.close(); // tell the other players right away
       dmNet.current?.close();
-      void gameRegistry.current?.saveNow('hidden');
+      // Checkpoints happen during play and on visibility changes; unload is not a save guarantee.
     };
     window.addEventListener('pagehide', beforeUnload);
     return () => {
@@ -74,8 +96,27 @@ export function App() {
       window.removeEventListener('pointerup', unlock);
       window.removeEventListener('click', unlock);
       window.removeEventListener('pagehide', beforeUnload);
+      removeLifecycle(); removeGame(); removeSettings();
     };
   }, []);
+
+  useEffect(() => {
+    // Passive unmount cleanup has disposed the world/network before this menu effect.
+    if (screen === 'menu' && adOpportunity.current) {
+      adOpportunity.current = false;
+      void getAds()?.interstitial();
+    }
+  }, [screen]);
+
+  useEffect(() => {
+    if (screen === 'boot' || screen === 'loading' || screen === 'playing' || fatal) return;
+    // Confirm an actual interactive menu was committed and got a paint opportunity.
+    let second = 0;
+    const first = requestAnimationFrame(() => { second = requestAnimationFrame(() => {
+      if (document.querySelector('.app button:not(:disabled)')) platform.gameReady();
+    }); });
+    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second); };
+  }, [screen, fatal]);
 
   if (fatal) return <FatalScreen message={fatal} />;
 

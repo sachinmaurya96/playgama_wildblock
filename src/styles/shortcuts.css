@@ -1,0 +1,75 @@
+/* Desktop reference rail, below the existing vitals / radar and above the hotbar. */
+.desktop-shortcuts {
+  --shortcuts-top: max(142px, calc(var(--safe-t) + 132px));
+  --shortcuts-width: clamp(208px, 18vw, 244px);
+  position: absolute;
+  top: var(--shortcuts-top);
+  left: max(14px, var(--safe-l));
+  width: var(--shortcuts-width);
+  max-height: calc(100dvh - var(--shortcuts-top) - max(104px, calc(var(--safe-b) + 96px)));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255, 246, 224, 0.2);
+  border-radius: 12px;
+  background: rgba(27, 33, 28, 0.52);
+  backdrop-filter: blur(5px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  color: #fff6e0;
+  font-size: calc(11px * var(--ui-scale));
+  line-height: 1.45;
+  pointer-events: auto;
+}
+
+.desktop-shortcuts--build { --shortcuts-top: max(110px, calc(var(--safe-t) + 100px)); }
+.desktop-shortcuts--shared { --shortcuts-top: max(244px, calc(var(--safe-t) + 234px)); }
+.desktop-shortcuts--build.desktop-shortcuts--shared { --shortcuts-top: max(184px, calc(var(--safe-t) + 174px)); }
+.hud:has(.voice-speakers) .desktop-shortcuts--shared:not(.desktop-shortcuts--build) { --shortcuts-top: max(344px, calc(var(--safe-t) + 334px)); }
+.desktop-shortcuts.is-locked, .desktop-shortcuts.is-locked * { pointer-events: none; }
+.desktop-shortcuts-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 11px;
+  border: 0;
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+.desktop-shortcuts-title { display: flex; align-items: center; gap: 7px; font-size: 1.1em; }
+.desktop-shortcuts-title > span { color: #dfd3af; font-size: 1.25em; line-height: 1; }
+.desktop-shortcuts-toggle:hover { background: rgba(255, 255, 255, 0.1); }
+.desktop-shortcuts-mode { padding: 0 11px 7px; color: #d7dcca; font-size: 0.9em; }
+.desktop-shortcuts-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 11px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 246, 224, 0.3) transparent;
+}
+.desktop-shortcuts-list dl { margin: 0; }
+.desktop-shortcuts-row { display: grid; grid-template-columns: minmax(54px, 0.85fr) minmax(0, 1.4fr); align-items: start; gap: 8px; padding: 5px 0; border-top: 1px solid rgba(255, 246, 224, 0.09); }
+.desktop-shortcuts-row dt, .desktop-shortcuts-row dd { margin: 0; overflow-wrap: anywhere; }
+.desktop-shortcuts-row dd { padding-top: 1px; }
+.desktop-shortcuts kbd { display: inline-block; padding: 1px 5px; border: 1px solid rgba(255, 246, 224, 0.24); border-radius: 4px; background: rgba(255, 255, 255, 0.08); color: #ffedbb; font: inherit; font-size: 0.95em; font-weight: 800; }
+.desktop-shortcuts-footer { padding: 7px 11px; border-top: 1px solid rgba(255, 246, 224, 0.14); color: #d7dcca; font-size: 0.9em; }
+.desktop-shortcuts-toggle:focus-visible, .desktop-shortcuts-list:focus-visible { outline: 2px solid #ffedbb; outline-offset: -2px; }
+
+/* Keep the existing build tools beside the reference instead of underneath it. */
+.build-hud:has(> .desktop-shortcuts) .bh-tools { left: calc(max(14px, var(--safe-l)) + clamp(208px, 18vw, 244px) + 10px); }
+.build-hud:has(> .desktop-shortcuts) .bh-options { left: calc(max(14px, var(--safe-l)) + clamp(208px, 18vw, 244px) + 88px); max-width: min(640px, calc(100vw - clamp(208px, 18vw, 244px) - 120px)); }
+.hud:has(.desktop-shortcuts) > .debug-panel { left: calc(max(14px, var(--safe-l)) + clamp(208px, 18vw, 244px) + 10px); }
+.hud:has(.build-hud > .desktop-shortcuts) > .debug-panel { left: calc(max(14px, var(--safe-l)) + clamp(208px, 18vw, 244px) + 88px); }
+
+.touch-ui .desktop-shortcuts { display: none; }
+@media (pointer: coarse), (hover: none) { .desktop-shortcuts { display: none; } }
+@media (max-height: 600px) {
+  .desktop-shortcuts { font-size: calc(10px * var(--ui-scale)); }
+  .desktop-shortcuts-row { padding: 3px 0; }
+}

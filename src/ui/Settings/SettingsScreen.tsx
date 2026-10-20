@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { preferences } from '../../platform/storage';
 import { audio } from '../../game/core/audio';
 import { Gyro, isAppleMobile, type GyroStatus } from '../../game/core/Gyro';
 import { gameRegistry } from '../../game/registry';
@@ -323,6 +324,7 @@ function Gameplay() {
         <Toggle value={gp.showDebug} onChange={(v) => update('gameplay', { showDebug: v })} />
       </Row>
       <p className="muted">Difficulty is chosen per world when you create it.</p>
+      <Row label="🌐 Language"><select aria-label="Language" value="en" onChange={() => preferences.setItem('wildblocks.language', 'en')} onClick={() => preferences.setItem('wildblocks.language', 'en')}><option value="en">English</option></select></Row>
     </>
   );
 }

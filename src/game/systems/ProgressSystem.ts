@@ -161,7 +161,7 @@ export class ProgressSystem {
     useGameStore.getState().toast(`Quest complete: ${q.title} — reward: ${rewardText}`, 'quest', '✅');
     this.game.audio.play('chime');
     // chain: the next quest may already be satisfied
-    setTimeout(() => this.checkQuest(), 1500);
+    this.game.defer(() => this.checkQuest(), 1500);
   }
 
   readLore(index: number): void {

@@ -94,6 +94,12 @@ class MusicLayer {
 }
 
 export class AudioManager {
+  private allowed = true;
+  setAllowed(value: boolean): void {
+    this.allowed = value;
+    if (this.volumes) this.applyVolumes(this.volumes);
+    if (value) this.recovery?.resume(); else this.recovery?.suspend();
+  }
   ctx: AudioContext | null = null;
   private master!: GainNode;
   private buses = {} as Record<Bus, GainNode>;
@@ -114,6 +120,7 @@ export class AudioManager {
 
   /** Must be called from a user gesture (browser autoplay rules). Safe to call repeatedly. */
   init(): void {
+    if (!this.allowed) return;
     if (this.ctx) {
       this.recovery?.wake();
       return;
@@ -165,7 +172,7 @@ export class AudioManager {
   }
 
   get ready(): boolean {
-    return !!this.ctx && this.ctx.state === 'running';
+    return this.allowed && !!this.ctx && this.ctx.state === 'running';
   }
 
   private loopNoise(buf: AudioBuffer, type: BiquadFilterType, freq: number, q: number) {
@@ -189,7 +196,7 @@ export class AudioManager {
     this.volumes = v;
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this.master.gain.setTargetAtTime(v.master, t, 0.05);
+    this.master.gain.setTargetAtTime(this.allowed ? v.master : 0, t, 0.05);
     this.buses.music.gain.setTargetAtTime(v.music * 0.5, t, 0.05);
     this.buses.ambient.gain.setTargetAtTime(v.ambient * 0.8, t, 0.05);
     this.buses.sfx.gain.setTargetAtTime(v.sfx, t, 0.05);
@@ -576,7 +583,7 @@ export class AudioManager {
   }
 
   resume(): void {
-    this.recovery?.resume();
+    if (this.allowed) this.recovery?.resume();
   }
 
   dispose(): void {

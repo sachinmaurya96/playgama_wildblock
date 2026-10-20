@@ -11,6 +11,7 @@ import { PlayerRadar } from '../common/Radar';
 import { VoiceDock } from '../Voice/VoiceControls';
 import { DmOptions } from './DmOptions';
 import { WeaponHud } from './WeaponHud';
+import { DesktopShortcuts } from '../HUD/DesktopShortcuts';
 
 const clock = (s: number) => {
   const t = Math.max(0, Math.ceil(s));
@@ -44,7 +45,7 @@ export function DeathmatchHud() {
             empty="Players show here"
           />
           <VoiceDock className="dm-voice" />
-          <KeyHints />
+          <DesktopShortcuts />
           <KillFeed />
           <Health />
           <WeaponHud />
@@ -182,24 +183,6 @@ function Crosshair() {
   );
 }
 
-/** Desktop: the controls, as key caps along the bottom-left. */
-function KeyHints() {
-  const touch = useSettingsStore((s) => s.controls.touch);
-  const keys = useSettingsStore((s) => s.controls.keys);
-  if (touchEnabled(touch)) return null;
-  const k = (code: string) => keyLabel(code);
-  const list: [string, string][] = [
-    [`${k(keys.forward)}${k(keys.left)}${k(keys.back)}${k(keys.right)}`, 'Move'], [k(keys.jump), 'Jump'], [k(keys.sprint), 'Sprint'], [k(keys.crouch), 'Crouch'],
-    ['LMB / F', 'Fire'], ['RMB', 'Aim / scope'], ['R', 'Reload'], ['1-3', 'Weapons'], ['Q', 'Last weapon'],
-    ['E', 'Pick up'], ['4', 'Small medkit'], ['5', 'Large medkit'], [k(keys.talk), 'Talk'], [k(keys.listen), 'Listen'], ['Tab', 'Scores'], [k(keys.options), 'Options'], ['Esc', 'Menu'],
-  ];
-  return (
-    <ul className="dm-keys" aria-label="Controls">
-      {list.map(([key, what]) => <li key={what}><kbd>{key}</kbd>{what}</li>)}
-    </ul>
-  );
-}
-
 function Scope() {
   const scoped = useDeathmatchStore((s) => s.scoped);
   // while scoped the touch buttons sit above the scope so you can still fire, move and un-scope
@@ -278,17 +261,20 @@ function Waiting() {
   );
 }
 
-function DeathScreen() {
+export function DeathScreen() {
   const alive = useDeathmatchStore((s) => s.alive);
   const by = useDeathmatchStore((s) => s.killedBy);
   const t = useDeathmatchStore((s) => s.respawnIn);
   const phase = useDeathmatchStore((s) => s.phase);
+  const pending = useDeathmatchStore((s) => s.respawnPending);
   if (alive || phase !== 'playing') return null;
   return (
-    <div className="dm-dead">
-      <h2>YOU WERE ELIMINATED</h2>
+    <div className="dm-dead" role="dialog" aria-modal="true" aria-labelledby="dm-death-title">
+      <h2 id="dm-death-title">YOU WERE ELIMINATED</h2>
       {by && <p>Eliminated by <b className={by.team}>{by.name}</b> — {by.weapon}</p>}
-      <p className="dm-respawn">Respawning in {Math.max(1, Math.ceil(t))}…</p>
+      <p className="dm-respawn">{t > 0 ? `Respawn available in ${Math.ceil(t)}…` : 'Respawn when you are ready.'}</p>
+      <button className="btn primary" disabled={t > 0 || pending} onClick={() => gameRegistry.current?.dm?.requestRespawn()}>{pending ? 'Respawning…' : 'Respawn'}</button>
+      <button className="btn" onClick={() => useGameStore.getState().setScreen('menu')}>Leave match</button>
     </div>
   );
 }
@@ -299,6 +285,7 @@ function ClickToFight() {
   const phase = useDeathmatchStore((s) => s.phase);
   const touch = useSettingsStore((s) => s.controls.touch);
   const options = useDeathmatchStore((s) => s.optionsOpen);
+  const alive = useDeathmatchStore((s) => s.alive);
   const [locked, setLocked] = useState(() => typeof document !== 'undefined' && !!document.pointerLockElement);
   useEffect(() => {
     const on = () => setLocked(!!document.pointerLockElement);
@@ -306,7 +293,7 @@ function ClickToFight() {
     on();
     return () => document.removeEventListener('pointerlockchange', on);
   }, []);
-  if (locked || cursorFree || overlay !== null || options || touchEnabled(touch) || phase === 'ended') return null;
+  if (!alive || locked || cursorFree || overlay !== null || options || touchEnabled(touch) || phase === 'ended') return null;
   return (
     <button className="click-to-play" onClick={() => gameRegistry.current?.input.requestLock()}>
       <span className="ctp-card">

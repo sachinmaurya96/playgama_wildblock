@@ -44,6 +44,7 @@ export interface DmState {
   alive: boolean;
   protectedFor: number;
   respawnIn: number;
+  respawnPending: boolean;
   killedBy: { name: string; weapon: string; team?: Team } | null;
   loadout: LoadoutSnapshot | null;
   weapon: WeaponId;
@@ -78,7 +79,7 @@ export interface DmState {
 let feedId = 1;
 
 const matchInitial = {
-  phase: null as DmState['phase'], countdown: 0, timeLeft: 0, red: 0, blue: 0, hp: 100, alive: true, protectedFor: 0, respawnIn: 0,
+  phase: null as DmState['phase'], countdown: 0, timeLeft: 0, red: 0, blue: 0, hp: 100, alive: true, protectedFor: 0, respawnIn: 0, respawnPending: false,
   killedBy: null as DmState['killedBy'], loadout: null as LoadoutSnapshot | null, weapon: 'sword' as WeaponId, reloading: 0,
   healing: null as DmState['healing'], aiming: false, scoped: false, hitAt: 0, hitHead: false, killAt: 0, hurtAt: 0, hurtDir: 0,
   feed: [] as DmFeedEntry[], prompt: null as string | null, scoreboardOpen: false, optionsOpen: false, result: null as MatchResult | null, waitingFor: [] as string[], spread: 0,

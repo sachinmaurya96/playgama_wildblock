@@ -128,7 +128,7 @@ export class EnvironmentSystem {
       if (this.lightningTimer <= 0) {
         this.lightningTimer = 9 + Math.random() * 16;
         this.lightning = settings.accessibility.reduceFlashing ? 0.25 : 0.7;
-        setTimeout(() => g.audio.play('thunder', { volume: 0.8 }), 600 + Math.random() * 1600);
+        g.defer(() => g.audio.play('thunder', { volume: 0.8 }), 600 + Math.random() * 1600);
       }
     }
     this.lightning = Math.max(0, this.lightning - dt * 2.2);

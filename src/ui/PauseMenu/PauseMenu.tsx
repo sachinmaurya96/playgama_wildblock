@@ -4,7 +4,7 @@ import { useGameStore } from '../../stores/gameStore';
 import { ACTION_LABELS, keyLabel, useSettingsStore, type Action } from '../../stores/settingsStore';
 import { useWorldStore } from '../../stores/worldStore';
 import { BUILD_CONTROLS } from '../../data/buildControls';
-import { useBuildStore } from '../../stores/buildStore';
+import { useBuildStore, markTutorialSeen } from '../../stores/buildStore';
 import { usePvpStore } from '../../stores/pvpStore';
 import { copyInvite } from '../HUD/PvpHud';
 import { dmNet } from '../../net/deathmatchNet';
@@ -92,11 +92,7 @@ function BuildPause({ resume, quit, busy, onControls }: { resume: () => void; qu
   const world = useGameStore((s) => s.world);
   const viewKey = useSettingsStore((s) => keyLabel(s.controls.keys.buildView));
   const tutorial = () => {
-    try {
-      localStorage.setItem('wildblocks.build.v1', JSON.stringify({ ...JSON.parse(localStorage.getItem('wildblocks.build.v1') ?? '{}'), tutorialSeen: false }));
-    } catch {
-      /* storage unavailable */
-    }
+    markTutorialSeen(false);
     useGameStore.getState().toast('The tutorial will show again next time you open this project.', 'info', '🎓');
   };
   return (

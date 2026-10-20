@@ -1,8 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { App } from './app/App';
+import { PlatformGate } from './platform/PlatformGate';
 import { ErrorBoundary } from './app/ErrorBoundary';
-import { platform } from './platform';
 import { installTouchGuards, isTouchDevice } from './app/mobile';
 import { useGameStore } from './stores/gameStore';
 import './styles/global.css';
@@ -19,8 +18,6 @@ window.addEventListener('unhandledrejection', (e) => {
   console.error('[WildBlocks] unhandled promise rejection', e.reason);
 });
 
-void platform.init();
-
 // Phones & tablets: no double-tap / pinch zoom, no long-press callouts, landscape UI.
 installTouchGuards();
 if (isTouchDevice()) document.documentElement.classList.add('touch-ui');
@@ -28,7 +25,7 @@ if (isTouchDevice()) document.documentElement.classList.add('touch-ui');
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      <PlatformGate />
     </ErrorBoundary>
   </StrictMode>,
 );

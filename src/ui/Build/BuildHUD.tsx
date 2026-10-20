@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ARCH_MATERIALS, archIndex } from '../../data/architecture';
 import { catalogItem, FARM_CROPS, FLOOR_MATERIALS, ROOF_MATERIALS, STRUCT_MATERIALS, WALL_MATERIALS, type BuildCatalogItem, type ToolId } from '../../data/buildCatalog';
-import { BUILD_HINTS } from '../../data/buildControls';
 import { CHALLENGES, challengeById } from '../../data/buildChallenges';
 import { gameRegistry } from '../../game/registry';
 import { markTutorialSeen, tutorialSeen, useBuildStore, type ToolOptions } from '../../stores/buildStore';
@@ -9,6 +8,7 @@ import { useGameStore } from '../../stores/gameStore';
 import { keyLabel, useSettingsStore } from '../../stores/settingsStore';
 import { touchEnabled } from '../../app/mobile';
 import { ItemIcon } from './BuildCatalog';
+import { DesktopShortcuts } from '../HUD/DesktopShortcuts';
 
 const build = () => gameRegistry.current?.build ?? null;
 
@@ -65,7 +65,7 @@ export function BuildHUD() {
       {!walkthrough && <RegionPanel />}
       {!walkthrough && <QuickBar />}
       {!walkthrough && <ChallengePanel />}
-      <Hints />
+      <DesktopShortcuts />
       <BuildCrosshair />
       {walkthrough && <div className="walk-banner">🚶 Walkthrough — <b>F</b> opens doors & switches lights · <b>F9</b> back to building <button className="btn small" onClick={() => build()?.setWalkthrough(false)}>Keep building</button></div>}
       {tut && overlay === null && <Tutorial onClose={() => { setTut(false); markTutorialSeen(true); }} />}
@@ -442,23 +442,6 @@ function QuickBar() {
         <span>📚</span><small>B</small>
       </button>
       {tool === 'place' && deg !== 0 && <span className="bh-rot">⟳ {deg}°</span>}
-    </div>
-  );
-}
-
-function Hints() {
-  const collapsed = useBuildStore((s) => s.hintsCollapsed);
-  const viewKey = useSettingsStore((s) => keyLabel(s.controls.keys.buildView));
-  const set = useBuildStore((s) => s.set);
-  return (
-    <div className={`bh-hints ${collapsed ? 'collapsed' : ''}`}>
-      <button className="bh-hints-toggle" onClick={() => set({ hintsCollapsed: !collapsed })}>{collapsed ? '⌨️ Hints (H)' : 'Hide hints (H)'}</button>
-      {!collapsed && (
-        <div className="bh-hint-list">
-          <span><kbd>{viewKey}</kbd> First / third person</span>
-          {BUILD_HINTS.map(([k, v]) => <span key={k}><kbd>{k}</kbd> {v}</span>)}
-        </div>
-      )}
     </div>
   );
 }

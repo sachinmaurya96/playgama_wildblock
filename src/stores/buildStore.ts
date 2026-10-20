@@ -1,3 +1,4 @@
+import { preferences } from '../platform/storage';
 import { create } from 'zustand';
 import type { BuildCategory, ToolId } from '../data/buildCatalog';
 import type { RoofType } from '../game/build/BuildTools';
@@ -120,10 +121,10 @@ const LS_KEY = 'wildblocks.build.v1';
 
 function loadPrefs(): { favorites: string[]; recent: string[]; tutorialSeen: boolean; hintsCollapsed: boolean } {
   try {
-    const raw = localStorage.getItem(LS_KEY);
+    const raw = preferences.getItem(LS_KEY);
     if (raw) {
       const p = JSON.parse(raw);
-      return { favorites: p.favorites ?? [], recent: p.recent ?? [], tutorialSeen: !!p.tutorialSeen, hintsCollapsed: !!p.hintsCollapsed };
+      return { favorites: Array.isArray(p.favorites) ? p.favorites.filter((s: unknown) => typeof s === 'string') : [], recent: Array.isArray(p.recent) ? p.recent.filter((s: unknown) => typeof s === 'string') : [], tutorialSeen: p.tutorialSeen === true, hintsCollapsed: p.hintsCollapsed === true };
     }
   } catch {
     /* storage unavailable */
@@ -134,7 +135,7 @@ function loadPrefs(): { favorites: string[]; recent: string[]; tutorialSeen: boo
 function savePrefs(s: { favorites: string[]; recent: string[]; hintsCollapsed: boolean }, tutorialSeen?: boolean) {
   try {
     const prev = loadPrefs();
-    localStorage.setItem(LS_KEY, JSON.stringify({ favorites: s.favorites, recent: s.recent, hintsCollapsed: s.hintsCollapsed, tutorialSeen: tutorialSeen ?? prev.tutorialSeen }));
+    preferences.setItem(LS_KEY, JSON.stringify({ favorites: s.favorites, recent: s.recent, hintsCollapsed: s.hintsCollapsed, tutorialSeen: tutorialSeen ?? prev.tutorialSeen }));
   } catch {
     /* ignore */
   }
@@ -157,6 +158,11 @@ export const DEFAULT_OPTIONS: ToolOptions = {
 };
 
 const prefs = loadPrefs();
+
+export function hydrateBuildPreferences(): void {
+  const p = loadPrefs();
+  useBuildStore.setState({ favorites: p.favorites, recent: p.recent, hintsCollapsed: p.hintsCollapsed });
+}
 
 export const useBuildStore = create<BuildState>((set, get) => ({
   active: false,

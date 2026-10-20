@@ -108,7 +108,7 @@ The map reveals explored areas. Drag to pan and use the zoom buttons; desktop al
 
 ### 💀 Difficulty and recovery
 
-Death automatically respawns you immediately at Home if you have set one, otherwise at starting camp. You return with 75% Vitality, at least 60 Energy and three seconds of protection. Movement waits for the ground to load. Peaceful: death drops no items. Explorer: lose half of gathered materials, blocks, seeds and food in backpack slots; hotbar, tools and equipment stay. Adventurer: all hotbar and backpack stacks drop; equipped gear stays. Follow the lost-satchel marker to recover drops. Dropped items disappear after five minutes of active simulation. Peaceful-creature settings can also reduce danger. Deathmatch has its own five-second respawn wait.
+Death opens a screen that waits for you. Choose Respawn at home (if you have set one) or Respawn at starting camp when you are ready. Save & Quit keeps you defeated until you choose to respawn after reopening the world. You return with 75% Vitality, at least 60 Energy and three seconds of protection. Movement waits for the ground to load. Peaceful: death drops no items. Explorer: lose half of gathered materials, blocks, seeds and food in backpack slots; hotbar, tools and equipment stay. Adventurer: all hotbar and backpack stacks drop; equipped gear stays. Follow the lost-satchel marker to recover drops. Dropped items disappear after five minutes of active simulation. Peaceful-creature settings can also reduce danger. Deathmatch has its own five-second cooldown before its manual Respawn button becomes available.
 
 ### Keyboard and mouse controls
 
@@ -230,7 +230,7 @@ Choose PvP Mode → Battle or Build together to create a room. To share your own
 
 ### ⚔️ Battle rules
 
-The host chooses Wild World or a flat arena, equipment kit, takedown limit, creatures and whether building is allowed. Shared maps, Build together and Battle have no time limit; only Deathmatch is timed. Battle can end at the selected takedown limit; choose No takedown limit for an ongoing room. Defeated players respawn immediately while the round is active, with full Vitality, full Energy, the chosen kit and three seconds of protection. Movement waits for the ground to load. Battle gear drops where you fell and anyone can collect it; Build together does not drop gear. A death that ends a Battle shows the results instead. Check the scoreboard for progress and the radar for players. Quick Respawn is available for getting stuck, subject to its cooldown and match rules.
+The host chooses Wild World or a flat arena, equipment kit, takedown limit, creatures and whether building is allowed. Shared maps, Build together and Battle have no time limit; only Deathmatch is timed. Battle can end at the selected takedown limit; choose No takedown limit for an ongoing room. Defeated players stay on the death screen until they choose Respawn while the round is active, with full Vitality, full Energy, the chosen kit and three seconds of protection. Movement waits for the ground to load. Battle gear drops where you fell and anyone can collect it; Build together does not drop gear. A death that ends a Battle shows the results instead. Check the scoreboard for progress and the radar for players. Quick Respawn is available for getting stuck, subject to its cooldown and match rules.
 
 ### 🤝 Build together and saved worlds
 
@@ -291,7 +291,7 @@ Start with a sword and collect guns around the city. M416, AK-47, MP5, Pump Shot
 
 ### 🩹 Healing and respawning
 
-Small medkits restore 30 health in 0.6 seconds; large kits restore 65 in two seconds. Movement, firing or taking damage interrupts healing. You can carry three small and two large kits. Health stations restore 20 health and have a cooldown. Death gives a five-second respawn wait, then brief spawn protection and a randomized gun loadout. There is no Quick Respawn or teleport in Deathmatch.
+Small medkits restore 30 health in 0.6 seconds; large kits restore 65 in two seconds. Movement, firing or taking damage interrupts healing. You can carry three small and two large kits. Health stations restore 20 health and have a cooldown. Death opens a screen with a five-second cooldown. When it ends, choose Respawn whenever you are ready to return with brief spawn protection and a randomized gun loadout. Waiting or reconnecting does not respawn you automatically. There is no Quick Respawn or teleport in Deathmatch.
 
 ### 🏆 Scores and results
 

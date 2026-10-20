@@ -216,8 +216,9 @@ export class PvpSession {
   private lastHit: { by: string; at: number; how: string } | null = null;
   private swingCount = 0;
   private lastSwingSent = 0;
-  /** Shared worlds respawn immediately; retained for existing HUD/move checks. */
+  /** No timed respawn; the death screen waits for the player. */
   respawnIn = 0;
+  private awaitingRespawn = false;
   /** Quick respawn / teleport cooldown (seconds). */
   private moveCooldown = 0;
   /** After a teleport: once the terrain there has loaded, make sure we aren't inside a wall. */
@@ -405,7 +406,16 @@ export class PvpSession {
     p.syncHud();
     this.lastHit = null;
     this.respawnIn = 0;
+    this.awaitingRespawn = false;
     usePvpStore.getState().set({ respawnIn: 0, killedBy: null });
+  }
+
+  requestRespawn(): boolean {
+    if (this.disposed || this.phase !== 'playing' || !this.awaitingRespawn || !this.game.player.dead) return false;
+    this.respawn();
+    this.game.closeOverlay();
+    this.sendState(true);
+    return true;
   }
 
   // ---------------------------------------------------------------- voice
@@ -445,7 +455,7 @@ export class PvpSession {
   moveBlocked(): string | null {
     const p = this.game.player;
     if (this.phase !== 'playing') return 'The match is over.';
-    if (p.dead || this.respawnIn > 0) return 'You are respawning…';
+    if (p.dead || this.respawnIn > 0) return 'Choose Respawn on the death screen when you are ready.';
     if (this.lastHit && performance.now() - this.lastHit.at < 5000) return 'Not in the middle of a fight — wait a few seconds.';
     if (this.moveCooldown > 0) return `Ready again in ${Math.ceil(this.moveCooldown)} s.`;
     return null;
@@ -600,9 +610,10 @@ export class PvpSession {
     return out;
   }
 
-  /** Local death: publish loot/score, then respawn immediately unless the round has ended. */
+  /** Publish death once, then wait for an explicit respawn choice. */
   onLocalDeath(cause: string): boolean {
-    if (this.phase !== 'playing') return true;
+    if (this.phase !== 'playing' || this.awaitingRespawn) return true;
+    this.awaitingRespawn = true;
     const recent = this.lastHit && performance.now() - this.lastHit.at < 12000 ? this.lastHit : null;
     const by = recent?.by ?? null;
     const how = recent?.how ?? cause;
@@ -612,12 +623,10 @@ export class PvpSession {
     usePvpStore.getState().set({ respawnIn: 0, killedBy: by ? this.players.get(by)?.name ?? 'someone' : null });
     if (this.isHost) this.recordKill(this.selfId, by, how);
     else this.net.send({ t: 'died', id: this.selfId, by, how });
-    // Publish the death before the new spawn so peers keep loot and kill events in order.
+    this.game.player.body.vel.set(0, 0, 0);
     this.sendState(true);
-    if (this.phase === 'playing') {
-      this.respawn();
-      this.sendState(true);
-    }
+    this.lastHit = null;
+    if (this.phase === 'playing') this.game.openOverlay('death');
     return true;
   }
 
@@ -847,7 +856,7 @@ export class PvpSession {
     const off = this.game.bus.on('playerBlocked', () => (blocked = true));
     const before = p.invulnerable;
     const previousHit = this.lastHit;
-    // hurt() can synchronously kill and respawn us; it must see this attacker's credit.
+    // hurt() can synchronously kill us; it must see this attacker's credit.
     this.lastHit = { by: attacker, at: performance.now(), how: String(msg.how ?? 'melee') };
     const done = p.hurt(dmg, name, from);
     off();
@@ -1106,6 +1115,7 @@ export class PvpSession {
     usePvpStore.getState().set({ phase: 'ended', winner: name, scoreboardOpen: true });
     this.game.audio.play(winner === this.selfId ? 'levelUp' : 'chime');
     this.game.releasePointer();
+    if (useGameStore.getState().overlay === 'death') useGameStore.setState({ overlay: null });
   }
 
   /** Host: new round on the same map — scores reset, everyone respawns with a fresh kit. */
@@ -1128,6 +1138,7 @@ export class PvpSession {
     this.game.drops.clearNet();
     usePvpStore.getState().set({ phase: 'playing', winner: null, scoreboardOpen: false, feed: [], timeLeft: this.timeLeft });
     this.respawn();
+    if (useGameStore.getState().overlay === 'death') this.game.closeOverlay();
     useGameStore.getState().toast('New round — fight!', 'quest', '⚔️');
     if (useGameStore.getState().overlay === null) this.game.input.requestLock();
   }

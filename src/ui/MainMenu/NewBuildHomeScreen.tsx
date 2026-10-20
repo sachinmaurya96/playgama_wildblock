@@ -36,10 +36,12 @@ export function NewBuildHomeScreen() {
     setBusy(true);
     audio.init();
     audio.play('chime');
-    await createAndLaunch({
+    try { await createAndLaunch({
       name: name.trim() || 'Dream House', seedText: '', difficulty: 'peaceful', peacefulCreatures: true, mode: 'build',
       build: { plot, timeOfDay: time, timeLocked: true, weather: 'clear', theme: theme || undefined },
-    });
+    }); }
+    catch { useGameStore.getState().toast('Your project could not be saved. Retry saving, then try again.', 'warn'); }
+    finally { setBusy(false); }
   };
   return (
     <div className="menu-screen">

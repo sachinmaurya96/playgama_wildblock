@@ -17,6 +17,7 @@ import { usePvpStore } from '../../stores/pvpStore';
 import { armorStats } from '../../game/player/Player';
 import { DeathmatchHud } from '../Deathmatch/DeathmatchHud';
 import { RestActions } from './RestActions';
+import { DesktopShortcuts } from './DesktopShortcuts';
 
 export function HUD() {
   const hidden = useGameStore((s) => s.hudHidden);
@@ -54,6 +55,7 @@ export function HUD() {
         <>
           <Compass />
           <Vitals />
+          <DesktopShortcuts />
           {mode !== 'pvp' && <QuestPanel />}
           <Hotbar />
           {overlay === null && !cursorFree && <Crosshair />}

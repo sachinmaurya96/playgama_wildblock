@@ -22,7 +22,9 @@ export function NewWorldScreen() {
     setBusy(true);
     audio.init();
     audio.play('chime');
-    await createAndLaunch({ name, seedText: seed, difficulty, peacefulCreatures: peaceful });
+    try { await createAndLaunch({ name, seedText: seed, difficulty, peacefulCreatures: peaceful }); }
+    catch { useGameStore.getState().toast('Your world could not be saved. Retry saving, then try again.', 'warn'); }
+    finally { setBusy(false); }
   };
   return (
     <div className="menu-screen">

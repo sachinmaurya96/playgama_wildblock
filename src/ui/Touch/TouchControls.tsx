@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { lifecycle } from '../../platform/lifecycle';
 import { touchEnabled } from '../../app/mobile';
 import { gameRegistry } from '../../game/registry';
 import { useBuildStore } from '../../stores/buildStore';
@@ -68,6 +69,7 @@ export function TouchControls() {
   };
 
   // release held buttons from the window too: a finger lifted after its button was re-rendered
+  useEffect(() => lifecycle.subscribe(() => { if (lifecycle.paused) releaseAll(); }), []);
   // away must never leave "fly up" / "crouch" stuck on
   useEffect(() => {
     const release = (e: PointerEvent) => {

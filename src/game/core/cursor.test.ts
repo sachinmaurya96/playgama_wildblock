@@ -15,6 +15,7 @@ import { usePvpStore } from '../../stores/pvpStore';
 import { useDeathmatchStore } from '../../stores/deathmatchStore';
 import { HUD } from '../../ui/HUD/HUD';
 import { ControlsCard } from '../../ui/PauseMenu/PauseMenu';
+import { lifecycle } from '../../platform/lifecycle';
 
 const originalGame = useGameStore.getState();
 const originalSettings = useSettingsStore.getState();
@@ -67,6 +68,7 @@ beforeEach(() => {
   // Exercise the real game/input methods without constructing a WebGL renderer.
   game = Object.assign(Object.create(Game.prototype), {
     input, ready: true, disposed: false, suppressPause: false, build: null, pvp: null, dm: null,
+    player: { dead: false },
     audio: { play: vi.fn() }, notify: vi.fn(),
   }) as Game;
   input.onCursorToggle = () => game.toggleCursor();
@@ -91,6 +93,34 @@ afterEach(() => {
 });
 
 describe('desktop cursor shortcut', () => {
+  it('accepts the inventory shortcut immediately after an ad closes, without retaining interrupted input', () => {
+    useGameStore.setState({ overlay: 'inventory' });
+    const close = vi.spyOn(game, 'closeOverlay').mockImplementation(() => {});
+    const hotkeys = game as unknown as { handleKeys: () => void };
+    const handleKeys = hotkeys.handleKeys.bind(game);
+    vi.spyOn(hotkeys, 'handleKeys').mockImplementation(() => {
+      handleKeys();
+      // Stop this renderer-free test after the real hotkey handler runs.
+      lifecycle.set('user', true);
+    });
+    try {
+      press('KeyW');
+      lifecycle.set('ad', true);
+      game.update(1);
+      expect(input.isDown('forward')).toBe(false);
+      press('KeyE');
+      expect(input.wasPressed('inventory')).toBe(false);
+      lifecycle.set('ad', false);
+      press('KeyE');
+      expect(input.wasPressed('inventory')).toBe(true);
+      game.update(1);
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      lifecycle.set('ad', false);
+      lifecycle.set('user', false);
+    }
+  });
+
   it('releases without pausing, clears held actions, and restores mouse-look on the next press', () => {
     press('KeyW');
     input.mouseLeft = input.mouseLeftPressed = true;
@@ -222,6 +252,16 @@ describe('desktop cursor shortcut', () => {
     useGameStore.setState({ screen: 'menu' });
     expect(game.toggleCursor()).toBe(false);
     expect(input.pointerLocked).toBe(true);
+  });
+
+  it('keeps the pointer free for the respawn button while defeated', () => {
+    press();
+    game.player.dead = true;
+    expect(game.toggleCursor()).toBe(false);
+    press();
+    expect(input.pointerLocked).toBe(false);
+    expect(input.cursorFree).toBe(true);
+    expect(canvas.requestPointerLock).not.toHaveBeenCalled();
   });
 
   it('closes multiplayer quick options when returning to mouse-look', () => {

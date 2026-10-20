@@ -1,3 +1,5 @@
+import { preferences } from '../platform/storage';
+import { lifecycle } from '../platform/lifecycle';
 import { iceServers, type NetMsg } from './transport';
 import { useVoiceStore, type VoiceScope } from '../stores/voiceStore';
 import { audio } from '../game/core/audio';
@@ -59,7 +61,7 @@ export const voiceService: { current: VoiceChat | null } = { current: null };
 
 function loadScopes(): { hear: VoiceScope; talk: VoiceScope } {
   try {
-    const v = JSON.parse(localStorage.getItem('wb-voice-scope') ?? '{}');
+    const v = JSON.parse(preferences.getItem('wb-voice-scope') ?? '{}');
     return { hear: v.hear === 'team' ? 'team' : 'all', talk: v.talk === 'all' ? 'all' : 'team' };
   } catch {
     return { hear: 'all', talk: 'team' };
@@ -68,7 +70,7 @@ function loadScopes(): { hear: VoiceScope; talk: VoiceScope } {
 
 function loadPrefs(): Prefs {
   try {
-    const v = JSON.parse(localStorage.getItem('wb-voice') ?? '{}');
+    const v = JSON.parse(preferences.getItem('wb-voice') ?? '{}');
     return { mode: v.mode === 'open' ? 'open' : 'push', proximity: v.proximity !== false, listen: v.listenOff !== true };
   } catch {
     return { mode: 'push', proximity: true, listen: true };
@@ -148,7 +150,7 @@ export class VoiceChat {
    * can't start yet just starts on the next tap.
    */
   unlockAudio(): void {
-    if (this.disposed || this.audioPaused) return;
+    if (this.disposed || this.audioPaused || !lifecycle.audioEnabled) return;
     // Starting the mic can interrupt the game's separate audio context too.
     audio.init();
     if (!this.ctx) {
@@ -174,6 +176,7 @@ export class VoiceChat {
   }
 
   resumeAudio(): void {
+    if (!lifecycle.audioEnabled) return;
     this.audioPaused = false;
     this.recovery?.resume();
     if (this.on) this.unlockAudio();
@@ -181,7 +184,7 @@ export class VoiceChat {
 
   private savePrefs() {
     try {
-      localStorage.setItem('wb-voice', JSON.stringify({ mode: this.mode, proximity: this.proximity, listenOff: !this.wantListen }));
+      preferences.setItem('wb-voice', JSON.stringify({ mode: this.mode, proximity: this.proximity, listenOff: !this.wantListen }));
     } catch {
       /* private mode */
     }
@@ -237,7 +240,7 @@ export class VoiceChat {
 
   private saveScopes() {
     try {
-      localStorage.setItem('wb-voice-scope', JSON.stringify({ hear: this.hearScope, talk: this.talkScope }));
+      preferences.setItem('wb-voice-scope', JSON.stringify({ hear: this.hearScope, talk: this.talkScope }));
     } catch {
       /* private mode */
     }

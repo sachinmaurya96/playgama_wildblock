@@ -336,7 +336,7 @@ export class DeathmatchSession {
     this.team = this.roster.get(net.selfId)?.team ?? 'red';
     this.buildBoundary();
     this.buildStations();
-    useDeathmatchStore.getState().set({ phase: 'loading', hp: MAX_HP, alive: true, weapon: 'sword', loadout: this.arsenal.snapshot() });
+    useDeathmatchStore.getState().set({ phase: 'loading', hp: MAX_HP, alive: true, respawnPending: false, weapon: 'sword', loadout: this.arsenal.snapshot() });
   }
 
   get selfId(): string {
@@ -413,7 +413,7 @@ export class DeathmatchSession {
         st.set({ phase: 'playing', notice: 'FIGHT!' });
         playDm('fight');
         setTimeout(() => useDeathmatchStore.getState().notice === 'FIGHT!' && useDeathmatchStore.getState().set({ notice: null }), 1400);
-        if (useGameStore.getState().overlay === null && !useDeathmatchStore.getState().optionsOpen) this.game.input.requestLock();
+        if (this.alive && useGameStore.getState().overlay === null && !useDeathmatchStore.getState().optionsOpen) this.game.input.requestLock();
         return;
       case 'ss': {
         const t = performance.now();
@@ -497,10 +497,13 @@ export class DeathmatchSession {
           this.hp = 0;
           this.respawnAt = m.respawnAt;
           this.game.player.dead = true;
+          this.game.player.body.vel.set(0, 0, 0);
+          this.game.releasePointer();
+          this.game.input.endFrame();
           this.healUntil = 0;
           this.healSize = null;
           this.arsenal.reset();
-          st.set({ alive: false, hp: 0, killedBy: m.k ? { name: this.roster.get(m.k)?.name ?? 'Someone', weapon: feedWeapon(m.w), team: this.roster.get(m.k)?.team } : { name: m.w === 'fall' ? 'a fall' : 'the city', weapon: feedWeapon(m.w) }, healing: null });
+          st.set({ alive: false, hp: 0, respawnIn: Math.max(0, m.respawnAt - this.net.hostNow()), respawnPending: false, killedBy: m.k ? { name: this.roster.get(m.k)?.name ?? 'Someone', weapon: feedWeapon(m.w), team: this.roster.get(m.k)?.team } : { name: m.w === 'fall' ? 'a fall' : 'the city', weapon: feedWeapon(m.w) }, healing: null });
           playDm('eliminated');
         } else {
           const r = this.remotes.get(m.v);
@@ -529,7 +532,7 @@ export class DeathmatchSession {
           this.arsenal.reset();
           this.gunView.setGun(null);
           this.game.ensureSafePosition();
-          st.set({ alive: true, hp: MAX_HP, killedBy: null, respawnIn: 0 });
+          st.set({ alive: true, hp: MAX_HP, killedBy: null, respawnIn: 0, respawnPending: false });
           if (useGameStore.getState().overlay === null && !useDeathmatchStore.getState().optionsOpen) this.game.input.requestLock();
         } else {
           const r = this.remotes.get(m.id);
@@ -538,6 +541,11 @@ export class DeathmatchSession {
             r.alive = true;
           }
         }
+        return;
+      }
+      case 'respawnWait': {
+        this.respawnAt = m.until;
+        st.set({ respawnPending: false, respawnIn: Math.max(0, m.until - this.net.hostNow()) });
         return;
       }
       case 'inv': {
@@ -805,11 +813,11 @@ export class DeathmatchSession {
     p.shake = Math.min(1, p.shake + (gun === 'shotgun' || gun === 'm24' ? 0.25 : 0.06));
     this.gunView.fire(gun);
     playGun(gun);
-    if (gun === 'shotgun') setTimeout(() => playDm('pump'), 300);
-    if (gun === 'm24') setTimeout(() => playDm('bolt'), 250);
+    if (gun === 'shotgun') this.game.defer(() => playDm('pump'), 300);
+    if (gun === 'm24') this.game.defer(() => playDm('bolt'), 250);
     this.protUntil = 0;
     this.healCancelLocal();
-    if (this.arsenal.mag(gun) === 0 && this.arsenal.reserveFor(gun) > 0) setTimeout(() => this.reload(), 250);
+    if (this.arsenal.mag(gun) === 0 && this.arsenal.reserveFor(gun) > 0) this.game.defer(() => this.reload(), 250);
   }
 
   private swingSword(): void {
@@ -830,6 +838,14 @@ export class DeathmatchSession {
     if (this.phase !== 'playing' || !this.alive || amount < 1) return 0;
     this.net.send({ t: 'env', r: this.round, amt: Math.round(amount), cause });
     return amount;
+  }
+
+  requestRespawn(): boolean {
+    const st = useDeathmatchStore.getState();
+    if (this.disposed || this.phase !== 'playing' || this.alive || st.respawnPending || this.net.hostNow() < this.respawnAt) return false;
+    st.set({ respawnPending: true });
+    this.net.send({ t: 'respawn', r: this.round });
+    return true;
   }
 
   // ---------------------------------------------------------------- per frame

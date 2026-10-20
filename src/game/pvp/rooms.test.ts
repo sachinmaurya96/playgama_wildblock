@@ -63,7 +63,7 @@ function combat(host = true, style: 'battle' | 'together' = 'battle') {
     pvp: session, dm: null, difficulty: 'explorer',
     rest: { release: vi.fn(), stand: vi.fn() }, boats: { riding: null }, bus: new EventBus(),
     audio: { play: vi.fn() }, particles: { emit: vi.fn() },
-    input: { pointerLocked: false, clearHeld: vi.fn() },
+    input: { pointerLocked: false, clearHeld: vi.fn(), requestLock: vi.fn() },
   });
   Object.assign(game.drops, { spawnNet: vi.fn() });
   Object.assign(game, { player: new Player(game) });
@@ -84,7 +84,7 @@ function combat(host = true, style: 'battle' | 'together' = 'battle') {
   return { ...result, attacker, hit, snap };
 }
 
-describe('immediate shared-world respawn', () => {
+describe('player-chosen shared-world respawn', () => {
   it('rescues a living friend-room player without loot, kit refills or death scores', () => {
     const { game, net, session, internals, snap } = combat();
     game.player.vitality = 79; game.player.energy = 51; game.player.invulnerable = 4;
@@ -102,10 +102,20 @@ describe('immediate shared-world respawn', () => {
   });
 
   it.each([[true, 'battle'], [false, 'battle'], [true, 'together'], [false, 'together']] as const)(
-    'host=%s style=%s credits the lethal hit and publishes death then immediate revival', (host, style) => {
+    'host=%s style=%s credits death once and revives only on request', (host, style) => {
       const { game, net, session, internals, attacker, hit, snap } = combat(host, style);
       const lethalHit = style === 'battle' ? hit : () => game.player.hurt(60, 'Zombie');
       lethalHit();
+      expect(game.player.dead).toBe(true);
+      expect(game.player.position.toArray()).toEqual([4.5, 11, 6.5]);
+      expect(useGameStore.getState().overlay).toBe('death');
+      const deathMessages = vi.mocked(net.send).mock.calls.length;
+      session.onLocalDeath('duplicate');
+      expect(net.send).toHaveBeenCalledTimes(deathMessages);
+      session.update(60);
+      expect(game.player.dead).toBe(true);
+      expect(vi.mocked(net.send).mock.calls.filter(([msg]) => msg.t === 's')).toMatchObject([[{ dead: true }]]);
+      expect(session.requestRespawn()).toBe(true);
       expect(game.player.dead).toBe(false);
       expect(game.player.position.toArray()).toEqual([12.5, 11.1, 12.5]);
       expect(game.player.vitality).toBe(100); expect(game.player.energy).toBe(100);
@@ -138,6 +148,7 @@ describe('immediate shared-world respawn', () => {
         expect(inv.count(item)).toBeGreaterThanOrEqual(count);
       }
       const messageCount = messages.length;
+      expect(session.requestRespawn()).toBe(false);
       lethalHit(); // repeated hits cannot immediately kill the new spawn
       expect(game.player.vitality).toBe(100); expect(net.send).toHaveBeenCalledTimes(messageCount);
       expect(internals.lastHit).toBeNull();
@@ -152,7 +163,7 @@ describe('immediate shared-world respawn', () => {
     expect(internals.players.get(attacker)?.kills).toBe(1);
     expect(internals.players.get('earlier')?.kills).toBe(0);
     expect(internals.players.get(session.selfId)?.deaths).toBe(1);
-    expect(game.player.dead).toBe(false);
+    expect(game.player.dead).toBe(true);
   });
 
   it('does not credit protected or shield-blocked hits', () => {
@@ -169,10 +180,11 @@ describe('immediate shared-world respawn', () => {
     expect(internals.players.get(attacker)?.kills).toBe(0);
   });
 
-  it('freezes an instant spawn until its ground is loaded', () => {
-    const { game, hit } = combat();
+  it('freezes a requested spawn until its ground is loaded', () => {
+    const { game, hit, session } = combat();
     Object.assign(game, { chunks: { isReady: () => false } });
     hit();
+    expect(session.requestRespawn()).toBe(true);
     expect(game.player.dead).toBe(false); expect(game.player.waitingForGround).toBe(true);
     expect(game.player.invulnerable).toBe(3); expect(game.player.body.vel.length()).toBe(0);
   });
@@ -189,6 +201,7 @@ describe('immediate shared-world respawn', () => {
     session.onLocalDeath('duplicate'); expect(net.send).toHaveBeenCalledTimes(count);
     session.update(10);
     expect(game.player.dead).toBe(true); expect(session.randomSpawn).not.toHaveBeenCalled();
+    expect(session.requestRespawn()).toBe(false);
   });
 });
 

@@ -2,7 +2,6 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useRef } from 'react';
 import type * as THREE from 'three';
 import type { LoadedWorld } from '../persistence/SaveManager';
-import { platform } from '../platform';
 import { useGameStore } from '../stores/gameStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { Game } from './Game';
@@ -55,7 +54,7 @@ function GameBridge({ launch }: { launch: LoadedWorld }) {
       .then(() => {
         if (cancelled) return;
         useGameStore.getState().setScreen('playing');
-        platform.gameReady();
+        if (game.player.dead && !game.dm) game.openOverlay('death');
       })
       .catch((e) => {
         console.error(e);

@@ -1,3 +1,4 @@
+import { preferences } from '../../platform/storage';
 import { useState } from 'react';
 import { launchCoopHost, launchPvp } from '../../app/launch';
 import { gameRegistry } from '../../game/registry';
@@ -8,7 +9,7 @@ import { DEFAULT_PVP_SETTINGS, PVP_COLORS, type PvpSettings, type PvpSource, typ
 
 function load<T>(key: string, fallback: T): T {
   try {
-    const v = localStorage.getItem(key);
+    const v = preferences.getItem(key);
     return v ? (JSON.parse(v) as T) : fallback;
   } catch {
     return fallback;
@@ -55,7 +56,7 @@ export function PlayWithFriends() {
     const worldId = g.meta.id;
     const playerName = (name.trim() || 'Explorer').slice(0, 16);
     try {
-      localStorage.setItem('wb-pvp-name', JSON.stringify(name));
+      preferences.setItem('wb-pvp-name', JSON.stringify(name));
     } catch {
       /* private mode */
     }

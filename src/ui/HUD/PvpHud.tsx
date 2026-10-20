@@ -59,7 +59,7 @@ export function CoopBar() {
   );
 }
 
-/** PvP HUD: room code & timer, your score, kill feed, respawn countdown, scoreboard and match results. */
+/** PvP HUD: room code & timer, your score, kill feed, scoreboard and match results. */
 export function PvpHud() {
   const code = usePvpStore((s) => s.code);
   const online = usePvpStore((s) => s.online);
@@ -111,7 +111,6 @@ export function PvpHud() {
       <Radar />
       <VoiceDock />
       <KillFeed />
-      <RespawnBanner />
       {open && <Scoreboard />}
     </>
   );
@@ -140,19 +139,6 @@ function KillFeed() {
           )}
         </div>
       ))}
-    </div>
-  );
-}
-
-function RespawnBanner() {
-  const t = usePvpStore((s) => s.respawnIn);
-  const by = usePvpStore((s) => s.killedBy);
-  const phase = usePvpStore((s) => s.phase);
-  if (t <= 0 || phase !== 'playing') return null;
-  return (
-    <div className="respawn-banner">
-      <b>{by ? `Taken down by ${by}` : 'You were defeated'}</b>
-      <span>Back in the fight in {t}…</span>
     </div>
   );
 }

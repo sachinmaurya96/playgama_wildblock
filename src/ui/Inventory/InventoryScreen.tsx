@@ -3,6 +3,7 @@ import type { StationKind } from '../../data/blocks';
 import { ARMOR_SETS, itemDef, SET_BONUS_DEFENSE, type EquipSlot } from '../../data/items';
 import { RECIPE_CATEGORIES, RECIPES, STATION_NAMES, type Recipe, type RecipeCategory } from '../../data/recipes';
 import { HOMESTEAD_LEVELS, SCARF_COLORS } from '../../data/progression';
+import { ScarfBonus, useStarlightUnlocked } from '../../platform/ScarfBonus';
 import { audio } from '../../game/core/audio';
 import { gameRegistry } from '../../game/registry';
 import { craftState, maxCraftsFitting, recipeSearchText, type CraftState } from '../../game/systems/CraftingSystem';
@@ -133,12 +134,13 @@ function harmonyLabel(h: number): string {
 
 function ScarfPicker({ level }: { level: number }) {
   const scarf = useSettingsStore((s) => s.gameplay.scarf);
+  const starlight = useStarlightUnlocked();
   return (
     <div className="scarf-picker">
       <small className="muted">Scarf</small>
       <div className="swatches">
         {SCARF_COLORS.map((c) => {
-          const locked = level < c.level;
+          const locked = level < c.level && !(c.id === 'starlight' && starlight);
           return (
             <button
               key={c.id}
@@ -151,6 +153,7 @@ function ScarfPicker({ level }: { level: number }) {
           );
         })}
       </div>
+      <ScarfBonus />
     </div>
   );
 }

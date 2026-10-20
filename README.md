@@ -137,7 +137,7 @@ Phones default to a sharp-but-light graphics profile (native-ish pixel ratio up 
 * **Beds and seats**: Sleep / Set home and Sit buttons appear within about three blocks of reachable furniture on desktop, phones and tablets. Survival sleep requires night and no nearby hostiles; Build Home beds can advance locked daytime too. Move, jump, Interact or tap Stand up to leave a seat. Shared sleep is checked by the host; friends see the seated pose. Chair saves resume at an exit position.
 * **Day/night** (24 min default), stylised sun/moon/stars, drifting voxel clouds, **weather** (clear, cloudy, rain, storm with accessibility-safe lightning, mist).
 * **Homestead Level** (building, farming, friendships, discoveries unlock recipes and cosmetics), **Home Comfort** (furniture near your bed improves the morning buff), **Nature Harmony** (plant trees, feed animals → rare butterflies and more wildlife; over-harvesting quietly thins it).
-* **Discovery Journal**, **world map** of explored areas, **compass** with home / quest / waypoint / lost-satchel markers, onboarding **quests**, **achievements**, shelter detection 🏡, sleep & set home, immediate automatic respawn at Home (or starting camp) with existing item-loss rules by difficulty (Peaceful / Explorer / Adventurer), 75% Vitality, at least 60 Energy and 3 s protection.
+* **Discovery Journal**, **world map** of explored areas, **compass** with home / quest / waypoint / lost-satchel markers, onboarding **quests**, **achievements**, shelter detection 🏡, sleep & set home, player-chosen respawn at Home or starting camp with existing item-loss rules by difficulty (Peaceful / Explorer / Adventurer), 75% Vitality, at least 60 Energy and 3 s protection.
 
 ## Build Home
 
@@ -194,7 +194,7 @@ Shared Build Home projects also show the player radar in the top-left: friends a
 * **⚙️ Options**: in-match button for 1st / 3rd person camera, controls help, scoreboard, invite, settings and exit. Everyone moves at the same speed in PvP (armor/buffs don't change it).
 * **Voice chat** (`src/net/voice.ts`): opt-in from ⚙️. A WebRTC audio mesh (each pair of players connects directly, ~30 kbps per voice), signalled over the game connection (`v` / `vs` messages relayed by the host). Push-to-talk (T / 🎤) or open mic, proximity voice via Web Audio `PannerNode`, per-player mute. Needs https (or localhost) for the microphone.
 * **Radar & rescue**: a top-left radar shows every player (rim arrows + distance when far, ▲/▼ for height). A 🆘 button (or R) appears only when you're stuck in a cave / ravine / water and puts you next to another player (30 s cooldown, not right after being hit).
-* **Rules**: immediate automatic respawn while the round is active, with a random safe spawn, full health/energy, the chosen kit refilled and 3 s spawn protection. Battle gear drops where you fell; Build together does not drop gear. A round-ending death stays on results. Movement waits for terrain readiness. PvP hits do ×1.35 damage. These rooms are temporary, except the host's shared Build Home project. Deathmatch keeps its separate 5 s respawn wait.
+* **Rules**: respawn only when the defeated player chooses it while the round is active, with a random safe spawn, full health/energy, the chosen kit refilled and 3 s spawn protection. Battle gear drops where you fell; Build together does not drop gear. A round-ending death stays on results. Movement waits for terrain readiness. PvP hits do ×1.35 damage. These rooms are temporary, except the host's shared Build Home project. Deathmatch keeps its separate 5 s cooldown, then waits for the player to press Respawn.
 * **Hosting it yourself (optional)**: very strict networks (some schools/offices, symmetric NAT on mobile carriers) block direct connections. Add a TURN relay with env vars at build time: `VITE_TURN_URL=turn:host:3478` (comma-separate several), `VITE_TURN_USER`, `VITE_TURN_PASS`. To use your own PeerJS signalling server instead of the free cloud: `VITE_PEER_HOST`, `VITE_PEER_PORT`, `VITE_PEER_PATH`, `VITE_PEER_SECURE`.
 * **Testing on one computer**: in the PvP screen open *Connection → This device*, host in one tab and join from a second tab of the same browser.
 
@@ -202,7 +202,7 @@ Shared Build Home projects also show the player radar in the top-left: friends a
 
 Room-based Red vs Blue combat in **City Clash**, a compact voxel city (152 × 152 playable blocks) built for 1v1 up to 4v4.
 
-**Flow:** Main menu → *Deathmatch — Team Battle* → **Create Room** (pick 5 / 8 / 10 / 12 minutes) or **Join Room** with the 6-character code or an invite link (`?dm=CODE`; PvP's `?pvp=CODE` links are unaffected). In the lobby the host starts on Red and joiners are auto-balanced; switch teams by **double-clicking / double-tapping an empty slot** in the other team or with **⇄ Switch**. The host's **Start Match** needs at least one player per team. Teams then lock, everyone loads the city, and a host-timed 10-second countdown ends with **FIGHT!**. Everyone spawns with a sword; guns, ammo and medkits lie around the city (rare ones in the neutral centre). Eliminated players drop their guns and respawn after 5 s with 3 s of spawn protection (ends early if you attack). The team with more eliminations at the buzzer wins (a tie is a draw); the top killer is MVP (fewer deaths breaks ties, otherwise joint MVP). The host can **Play Again** (back to the lobby, everything reset).
+**Flow:** Main menu → *Deathmatch — Team Battle* → **Create Room** (pick 5 / 8 / 10 / 12 minutes) or **Join Room** with the 6-character code or an invite link (`?dm=CODE`; PvP's `?pvp=CODE` links are unaffected). In the lobby the host starts on Red and joiners are auto-balanced; switch teams by **double-clicking / double-tapping an empty slot** in the other team or with **⇄ Switch**. The host's **Start Match** needs at least one player per team. Teams then lock, everyone loads the city, and a host-timed 10-second countdown ends with **FIGHT!**. Everyone spawns with a sword; guns, ammo and medkits lie around the city (rare ones in the neutral centre). Eliminated players drop their guns, wait through a 5 s cooldown, and choose Respawn when ready. They return with 3 s of spawn protection (ends early if you attack). The team with more eliminations at the buzzer wins (a tie is a draw); the top killer is MVP (fewer deaths breaks ties, otherwise joint MVP). The host can **Play Again** (back to the lobby, everything reset).
 
 | Desktop | Action |
 |---|---|
@@ -362,16 +362,24 @@ Spawning, AI tiers, combat, feeding and the journal pick it up automatically.
 
 ## Playgama build
 
-Platform code is isolated in `src/platform/`. The core game only calls the `platform` facade (`gameReady`, `onPauseChange`, optional `showRewarded`). `PlaygamaService` uses only documented Playgama Bridge calls (`bridge.initialize()`, `bridge.platform.sendMessage('game_ready')`, `PAUSE_STATE_CHANGED`, `advertisement.showRewarded()` + `REWARDED_STATE_CHANGED`, `platform.language`).
+Use Node >=20.19, then `npm ci`, `npx playwright install chromium`, and `npm run release`.
+`npm run realese` is an alias for the same complete release pipeline.
+The pinned Bridge v2 runtime and official Vite plugin are included automatically; no manual SDK script is needed.
+Release runs TypeScript, gameplay/platform tests, data validation, a production build, strict artifact validation,
+and Chromium smoke tests against a nested URL and iframe. It verifies extracted ZIP hashes before publishing
+`release/wildblocks-1.3.0-playgama.zip`. Reports are separate; a failure exits nonzero without a new upload ZIP.
 
-1. `npm run build`.
-2. In Playgama's config set the game's orientation to **landscape** (the game also locks / asks for landscape itself, but portals can override it inside their iframe).
-3. Add the bridge script to `dist/index.html` **before** the game script:
-   `<script src="https://bridge.playgama.com/v1/stable/playgama-bridge.js"></script>`
-4. Create `playgama-bridge-config.json` with Playgama's config editor and place it next to `index.html`.
-5. Zip the contents of `dist/` and upload. The facade detects `window.bridge` and switches to `PlaygamaService` automatically; without it the game runs in plain browser mode.
+Bridge loads before interactive screens. Saves/settings migrate read-only from the old browser stores and
+then use Bridge Storage. Independent pause/audio reasons cover host events, backgrounding and ads.
+Interstitial opportunities occur on return to menu after play (90-second cooldown); the survival backpack
+has an optional Starlight scarf rewarded offer. Ordinary Homestead unlocking remains available.
 
-Ad policy baked in: no interstitials during play; rewarded ads (if you wire one to a cosmetic, e.g. a scarf dye) are strictly player-initiated. Saves stay in local IndexedDB.
+Complete shipped language: English (platform-language fallback). Gameplay orientation: landscape.
+Selected target: Playgama only. Multiplayer and voice retain PeerJS/WebRTC network dependencies.
+
+Read [the integration audit](docs/playgama-integration-audit.md) and [the submission/manual QA checklist](docs/PLAYGAMA-SUBMISSION.md).
+For the publishing form, use the [upload descriptions, instructions, and three cover images](publishing/PLAYGAMA-UPLOAD-CONTENT.md).
+Local PASS does not establish live ad fill, cloud confirmation, physical-device support or moderation approval.
 
 ## Known limitations
 

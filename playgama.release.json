@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "gameSlug": "wildblocks",
+  "targets": ["playgama"],
+  "languages": ["en"],
+  "orientation": "landscape",
+  "distDir": "dist",
+  "releaseDir": "release",
+  "maxUncompressedBytes": 300000000,
+  "zipTargetBytes": 5000000,
+  "enforceZipTarget": false,
+  "safeFileNames": true
+}

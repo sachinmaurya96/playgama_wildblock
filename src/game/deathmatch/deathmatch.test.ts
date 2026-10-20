@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DeathmatchSession } from './DeathmatchSession';
+import { useDeathmatchStore } from '../../stores/deathmatchStore';
+import { useGameStore } from '../../stores/gameStore';
 import { CITY_G, LOOT_POINTS, spawnPoints } from './DeathmatchMap';
 import { DmRoom, LOAD_TIMEOUT_SECONDS, PREP_SECONDS } from './DeathmatchRules';
 import { DmServer, type ServerIO } from './DmServer';
@@ -95,6 +98,62 @@ function duel(minutes = 5) {
 }
 
 // ---------------------------------------------------------------- lobby
+
+describe('Deathmatch client respawn requests', () => {
+  const original = useDeathmatchStore.getState();
+  const originalGame = useGameStore.getState();
+  afterEach(() => {
+    useDeathmatchStore.setState(original);
+    useGameStore.setState(originalGame);
+    vi.useRealTimers();
+  });
+  it('keeps the cursor available for manual respawn after reconnecting while defeated', () => {
+    vi.useFakeTimers();
+    const requestLock = vi.fn();
+    const player = { dead: true };
+    const client = Object.assign(Object.create(DeathmatchSession.prototype), {
+      disposed: false, phase: 'preparing', alive: false, hp: 0, protUntil: 0,
+      net: { hostNow: () => 110 }, game: { input: { requestLock }, player },
+    }) as DeathmatchSession;
+    useGameStore.setState({ overlay: null });
+    useDeathmatchStore.setState({ alive: false, optionsOpen: false });
+    (client as unknown as { receive(m: ServerMsg): void }).receive({ t: 'go', r: 7, startAt: 100, endAt: 400 });
+    expect(useDeathmatchStore.getState()).toMatchObject({ phase: 'playing', alive: false });
+    expect(player.dead).toBe(true);
+    expect(requestLock).not.toHaveBeenCalled();
+    vi.runAllTimers();
+  });
+  it('sends one explicit request after the cooldown, and permits retry if the host is still waiting', () => {
+    let hostTime = 104;
+    const net = { hostNow: () => hostTime, send: vi.fn() };
+    const client = Object.assign(Object.create(DeathmatchSession.prototype), {
+      disposed: false, phase: 'playing', alive: false, round: 7, respawnAt: 105, net,
+    }) as DeathmatchSession;
+    useDeathmatchStore.setState({ respawnPending: false });
+    expect(client.requestRespawn()).toBe(false);
+    expect(net.send).not.toHaveBeenCalled();
+    hostTime = 106;
+    expect(client.requestRespawn()).toBe(true);
+    expect(net.send).toHaveBeenCalledExactlyOnceWith({ t: 'respawn', r: 7 });
+    expect(client.requestRespawn()).toBe(false);
+    (client as unknown as { receive(m: ServerMsg): void }).receive({ t: 'respawnWait', r: 7, until: 108 });
+    expect(useDeathmatchStore.getState()).toMatchObject({ respawnPending: false, respawnIn: 2 });
+    expect(client.requestRespawn()).toBe(false);
+    hostTime = 108;
+    expect(client.requestRespawn()).toBe(true);
+    expect(net.send).toHaveBeenCalledTimes(2);
+  });
+  it.each(['alive', 'ended', 'disposed'])('rejects a request while %s', (condition) => {
+    const net = { hostNow: () => 200, send: vi.fn() };
+    const client = Object.assign(Object.create(DeathmatchSession.prototype), {
+      disposed: condition === 'disposed', phase: condition === 'ended' ? 'ended' : 'playing',
+      alive: condition === 'alive', round: 7, respawnAt: 105, net,
+    }) as DeathmatchSession;
+    useDeathmatchStore.setState({ respawnPending: false });
+    expect(client.requestRespawn()).toBe(false);
+    expect(net.send).not.toHaveBeenCalled();
+  });
+});
 
 describe('Deathmatch lobby', () => {
   it('host creates a room on Red, first joiner goes Blue, then the smaller team', () => {
@@ -389,7 +448,7 @@ describe('Deathmatch combat', () => {
     expect(h.last('bob', 'kill').w).toBe('m24');
   });
 
-  it('respawns after 5 s at the team spawn with 100 HP and a random loaded gun', () => {
+  it('stays dead after the cooldown and respawns only on request with the existing loadout rules', () => {
     const h = duel();
     h.give('bob', 'ak47');
     h.give('host', 'm24');
@@ -398,7 +457,14 @@ describe('Deathmatch combat', () => {
     expect(h.server.lootItems().some((i) => i.kind.k === 'gun' && i.kind.gun === 'ak47')).toBe(true);
     h.advance(4.8);
     expect(h.server.debugPlayer('bob')!.alive).toBe(false);
-    h.advance(0.4);
+    h.server.receive('bob', { t: 'respawn', r: h.r });
+    expect(h.server.debugPlayer('bob')!.alive).toBe(false);
+    expect(h.last('bob', 'respawnWait').until).toBeGreaterThan(h.t);
+    h.advance(30);
+    expect(h.server.debugPlayer('bob')!.alive).toBe(false);
+    h.server.receive('bob', { t: 'respawn', r: h.r - 1 });
+    expect(h.server.debugPlayer('bob')!.alive).toBe(false);
+    h.server.receive('bob', { t: 'respawn', r: h.r });
     const bob = h.server.debugPlayer('bob')!;
     expect(bob.alive).toBe(true);
     expect(bob.hp).toBe(MAX_HP);
@@ -409,6 +475,11 @@ describe('Deathmatch combat', () => {
     expect(bob.arsenal.reserveFor(gun!)).toBe(GUNS[gun!].magazine);
     expect(bob.x).toBeGreaterThan(60);
     expect(bob.protUntil).toBeGreaterThan(h.t);
+    const spawns = h.msgs('bob', 'spawn').length;
+    const position = [bob.x, bob.y, bob.z];
+    h.server.receive('bob', { t: 'respawn', r: h.r });
+    expect(h.msgs('bob', 'spawn')).toHaveLength(spawns);
+    expect([bob.x, bob.y, bob.z]).toEqual(position);
   });
 
   it('healing cannot exceed 100, dead players cannot heal or pick up', () => {
@@ -527,6 +598,23 @@ describe('Deathmatch network rules', () => {
     expect(h.last('cat2', 'load').late).toBe(true);
     h.server.receive('cat2', { t: 'ready', r: h.r });
     expect(h.server.debugPlayer('cat2')!.kills).toBe(2);
+    expect(h.server.debugPlayer('cat2')!.alive).toBe(true);
+  });
+
+  it('keeps a defeated player dead after reconnecting until they request respawn', () => {
+    const h = new Harness();
+    h.join('bob'); h.join('cat'); h.startMatch();
+    const token = h.last('cat', 'welcome').token;
+    h.server.receive('cat', { t: 'env', r: h.r, amt: 100, cause: 'fall' });
+    expect(h.server.debugPlayer('cat')!.alive).toBe(false);
+    h.server.leave('cat');
+    h.advance(10);
+    h.server.receive('cat2', { t: 'hello', name: 'cat', v: DM_PROTOCOL, token });
+    h.server.receive('cat2', { t: 'ready', r: h.r });
+    expect(h.server.debugPlayer('cat2')!.alive).toBe(false);
+    expect(h.last('cat2', 'kill').v).toBe('cat2');
+    expect(h.msgs('cat2', 'spawn')).toHaveLength(0);
+    h.server.receive('cat2', { t: 'respawn', r: h.r });
     expect(h.server.debugPlayer('cat2')!.alive).toBe(true);
   });
 

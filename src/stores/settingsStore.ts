@@ -1,3 +1,4 @@
+import { preferences } from '../platform/storage';
 import { create } from 'zustand';
 
 export type Action =
@@ -121,10 +122,23 @@ export function defaultSettings(): Settings {
 
 const STORAGE_KEY = 'wildblocks.settings.v1';
 
-function load(): Settings {
+function validFields<T extends object>(defaults: T, raw: unknown): T {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ...defaults };
+  const output = { ...defaults };
+  for (const key of Object.keys(defaults) as (keyof T)[]) {
+    const value = (raw as T)[key], fallback = defaults[key];
+    if (typeof fallback === 'number') {
+      if (typeof value === 'number' && Number.isFinite(value)) output[key] = value;
+    } else if (typeof fallback === 'object' && fallback !== null) {
+      output[key] = validFields(fallback, value) as T[keyof T];
+    } else if (typeof value === typeof fallback) output[key] = value;
+  }
+  return output;
+}
+
+export function parseSettings(raw: string | null): Settings {
   const d = defaultSettings();
   try {
-    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
     if (!raw) return d;
     const s = JSON.parse(raw) as Partial<Settings> & { v?: number };
     // v1 → v2: touch devices had a blurry low-resolution default; lift it (keeps other choices)
@@ -132,17 +146,36 @@ function load(): Settings {
       s.graphics = { ...s.graphics, resolutionScale: Math.max(1, s.graphics.resolutionScale ?? 1), maxPixelRatio: Math.max(MOBILE_GRAPHICS.maxPixelRatio!, s.graphics.maxPixelRatio ?? 1) };
       if (s.graphics.preset === 'low') s.graphics.preset = 'auto';
     }
-    return {
+    const next = validFields(d, {
       graphics: { ...d.graphics, ...s.graphics },
       audio: { ...d.audio, ...s.audio },
       controls: { ...d.controls, ...s.controls, keys: { ...d.controls.keys, ...s.controls?.keys }, gyro: { ...d.controls.gyro, ...s.controls?.gyro } },
       gameplay: { ...d.gameplay, ...s.gameplay },
       accessibility: { ...d.accessibility, ...s.accessibility },
-    };
+    });
+    for (const key of Object.keys(next.audio) as (keyof Settings['audio'])[]) next.audio[key] = Math.max(0, Math.min(1, next.audio[key]));
+    if (!['low', 'medium', 'high', 'auto', 'custom'].includes(next.graphics.preset)) next.graphics.preset = d.graphics.preset;
+    if (!['off', 'low', 'high'].includes(next.graphics.particles)) next.graphics.particles = d.graphics.particles;
+    if (!['auto', 'on', 'off'].includes(next.controls.touch)) next.controls.touch = 'auto';
+    if (!['first', 'third'].includes(next.gameplay.cameraMode)) next.gameplay.cameraMode = 'first';
+    if (!['auto', 'phone', 'tablet'].includes(next.controls.gyro.profile)) next.controls.gyro.profile = 'auto';
+    if (!['auto', 'standard', 'apple'].includes(next.controls.gyro.axes)) next.controls.gyro.axes = 'auto';
+    if (!['always', 'aiming'].includes(next.controls.gyro.when)) next.controls.gyro.when = 'always';
+    next.graphics.renderDistance = Math.max(3, Math.min(12, Math.round(next.graphics.renderDistance)));
+    next.graphics.resolutionScale = Math.max(0.5, Math.min(1, next.graphics.resolutionScale));
+    next.graphics.maxPixelRatio = Math.max(1, Math.min(3, next.graphics.maxPixelRatio));
+    next.graphics.fov = Math.max(55, Math.min(100, next.graphics.fov));
+    next.accessibility.uiScale = Math.max(0.5, Math.min(2, next.accessibility.uiScale));
+    return next;
   } catch {
     return d;
   }
 }
+
+function load(): Settings { return parseSettings(preferences.getItem(STORAGE_KEY)); }
+
+/** Called once after Bridge storage resolves, before interactive screens render. */
+export function hydrateSettings(): void { useSettingsStore.setState(load()); }
 
 interface SettingsState extends Settings {
   update<K extends keyof Settings>(section: K, patch: Partial<Settings[K]>): void;
@@ -156,7 +189,7 @@ interface SettingsState extends Settings {
 function persist(s: Settings) {
   try {
     const { graphics, audio, controls, gameplay, accessibility } = s;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ v: SETTINGS_VERSION, graphics, audio, controls, gameplay, accessibility }));
+    preferences.setItem(STORAGE_KEY, JSON.stringify({ v: SETTINGS_VERSION, graphics, audio, controls, gameplay, accessibility }));
   } catch {
     /* storage unavailable (private mode) — settings stay in memory */
   }
